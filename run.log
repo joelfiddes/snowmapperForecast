@@ -1,0 +1,19 @@
+./sim/TPS_2024/snowmapper_evol/run.sh: line 2: conda: command not found
+python: can't open file 'run_master.py': [Errno 2] No such file or directory
+python: can't open file 'fetch_ifs_forecast.py': [Errno 2] No such file or directory
+python: can't open file 'run_current_month.py': [Errno 2] No such file or directory
+python: can't open file 'run_current_month.py': [Errno 2] No such file or directory
+python: can't open file 'run_forecast.py': [Errno 2] No such file or directory
+python: can't open file 'run_forecast.py': [Errno 2] No such file or directory
+python: can't open file 'run_current_month.py': [Errno 2] No such file or directory
+python: can't open file 'run_forecast.py': [Errno 2] No such file or directory
+python: can't open file 'concat_fsm.py': [Errno 2] No such file or directory
+python: can't open file 'concat_fsm.py': [Errno 2] No such file or directory
+python: can't open file 'concat_fsm.py': [Errno 2] No such file or directory
+python: can't open file 'make_netcdf_files.py': [Errno 2] No such file or directory
+python: can't open file 'make_netcdf_files.py': [Errno 2] No such file or directory
+python: can't open file 'make_netcdf_files.py': [Errno 2] No such file or directory
+python: can't open file 'merge_reproj_OLD.py': [Errno 2] No such file or directory
+python: can't open file 'results_table_all.py': [Errno 2] No such file or directory
+python: can't open file 'zonal_stats.py': [Errno 2] No such file or directory
+cp: cannot stat 'tables/*.txt': No such file or directory
