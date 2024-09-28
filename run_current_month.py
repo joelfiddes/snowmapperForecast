@@ -104,6 +104,7 @@ def update_config_paths(mp, newdir, thisyear, thismonth, daysinmonth):
 
     mp.config.project.start = mp.config.project.start.replace(year=thisyear, month=thismonth, day=1)
     mp.config.project.end = mp.config.project.end.replace(year=thisyear, month=thismonth, day=daysinmonth)
+    # mp.config.project.end = mp.config.project.end.replace(year=thisyear, month=thismonth, day=1)
 
 def perform_simulation(mp):
     """
