@@ -29,7 +29,7 @@ import xarray as xr
 import numpy as np
 from matplotlib import pyplot
 import matplotlib
-matplotlib.use('TkAgg')
+# matplotlib.use('TkAgg')
 
 mydir = sys.argv[1] # /home/joel/sim/TPS_2024
 os.chdir(mydir)
