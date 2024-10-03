@@ -2,9 +2,9 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 
-# Define the start of forecast
-start_time = datetime.now()
-first_timestamp = start_time - timedelta(days=7)
+
+
+
 # ==============================================================================
 # CATCHMENT STATISTICS
 # ==============================================================================
@@ -90,25 +90,6 @@ for catchment in catchments:
         modified_quantiles = pd.merge(modified_quantiles, quantiles_merged_hs, on='date')
         
         
-        # # Reorder the columns
-        # column_order = ['date', 'Q5_SWE', 'Q5_HS', 'Q50_SWE', 'Q50_HS', 'Q95_SWE', 'Q95_HS']
-        # modified_quantiles = modified_quantiles.reindex(columns=column_order)
-        
-        # # Reset the index to dates
-        # modified_quantiles.reset_index(inplace=True)
-
-        # # Convert the 'Date' column to datetime format
-        # modified_quantiles['date'] = pd.to_datetime(modified_quantiles['date'])
-
-        # # Set the 'Date' column as the index
-        # modified_quantiles.set_index('date', inplace=True, drop=False)
-
-        # # Write the quantiles to a new file
-        # filename = f"./newdomain/tables/{catchment}_current.txt"
-        # modified_quantiles = modified_quantiles.drop(columns=['index'])
-        # modified_quantiles.to_csv(filename, sep='\t',index=False)
-
-        
 
         # ==============================================================================
         # ROF STATISTICS (New section for runoff)
@@ -158,6 +139,29 @@ for catchment in catchments:
         # Write the final output
         filename = f"./tables/{catchment}_current.txt"
         modified_quantiles = modified_quantiles.drop(columns=['index'])
+
+
+        # Adding FC tag
+        # Convert the 'date' column to datetime format if not already
+        modified_quantiles['date'] = pd.to_datetime(modified_quantiles['date'])
+
+        # Get today's date
+        today = datetime.today().date()
+        
+        # Define the start of forecast as end of era5 
+        # start_time = datetime.now()
+        # today = start_time - timedelta(days=6)
+
+        # Add the 'FC' column with True for dates on or after today, and False for dates before today
+        modified_quantiles['FC'] = modified_quantiles['date'].apply(lambda x: x.date() >= today)
+
+        modified_quantiles.set_index('date', inplace=True, drop=False)
+
+
+        # Reset the index so 'date' becomes a column again
+        modified_quantiles = modified_quantiles.reset_index(drop=True)
+
+
         modified_quantiles.to_csv(filename, sep='\t', index=False)
 
 
@@ -210,9 +214,6 @@ for catchment in catchments:
         # Insert the 'Date' column at position 0
         # modified_quantiles.insert(0, 'date', date_range)
 
-        
-
-
 
         # Read the swedata
         data = pd.read_csv("./tables/hs_basin_mean_values_table.csv")
@@ -238,44 +239,12 @@ for catchment in catchments:
         # Rename the columns
         quantiles_merged_hs.rename(columns={'Date': 'date', catchment + '_Q50': 'Q50_HS', catchment+'_Q5': 'Q5_HS', catchment: 'Q95_HS'}, inplace=True)
 
-        
-        
 
         # deal with strange spike on 1 Jan by interpolating 31Dec and 2 Jan
         # where does it come from?
         # Concatenate the columns to the modified_quantiles DataFrame
         # modified_quantiles = pd.concat([modified_quantiles, quantiles_merged_hs], axis=1)
         modified_quantiles = pd.merge(modified_quantiles, quantiles_merged_hs, on='date')
-
-
-
-        # # Reorder the columns
-        # column_order = ['date', 'Q5_SWE', 'Q5_HS', 'Q50_SWE', 'Q50_HS', 'Q95_SWE', 'Q95_HS']
-        # modified_quantiles = modified_quantiles.reindex(columns=column_order)
-        
-        # # Reset the index to dates
-        # modified_quantiles.reset_index(inplace=True)
-
-        # # Convert the 'Date' column to datetime format
-        # modified_quantiles['date'] = pd.to_datetime(modified_quantiles['date'])
-
-        # # Set the 'Date' column as the index
-        # modified_quantiles.set_index('date', inplace=True, drop=False)
-
-        # # Calculate the mean of '2023-12-31' and '2024-01-02' for each column
-        # # Calculate the mean of adjacent dates for all relevant columns
-        # # replacement_values = modified_quantiles.loc[['2023-12-31', '2024-01-02'], ['Q5_SWE', 'Q5_HS', 'Q50_SWE', 'Q50_HS', 'Q95_SWE', 'Q95_HS']].mean()
-
-        # # Replace the values for '2024-01-01' with the calculated mean
-        # # modified_quantiles.loc['2024-01-01', ['Q5_SWE', 'Q5_HS', 'Q50_SWE', 'Q50_HS', 'Q95_SWE', 'Q95_HS']] = replacement_values
-
-
-        # # Write the quantiles to a new file
-        # filename = f"./newdomain/tables/{catchment}_current.txt"
-        # modified_quantiles = modified_quantiles.drop(columns=['index'])
-        # modified_quantiles.to_csv(filename, sep='\t',index=False)
-
-
 
 
         # Read the rof data
@@ -321,4 +290,26 @@ for catchment in catchments:
         # Write the final output
         filename = f"./tables/{catchment}_current.txt"
         modified_quantiles = modified_quantiles.drop(columns=['index'])
+
+
+        # Adding FC tag
+        # Convert the 'date' column to datetime format if not already
+        modified_quantiles['date'] = pd.to_datetime(modified_quantiles['date'])
+
+        # Get today's date
+        today = datetime.today().date()
+
+        # Define the start of forecast as end of era5 
+        # start_time = datetime.now()
+        # today = start_time - timedelta(days=6)
+
+        # Add the 'FC' column with True for dates on or after today, and False for dates before today
+        modified_quantiles['FC'] = modified_quantiles['date'].apply(lambda x: x.date() >= today)
+
+        modified_quantiles.set_index('date', inplace=True, drop=False)
+
+        # Reset the index so 'date' becomes a column again
+        modified_quantiles = modified_quantiles.reset_index(drop=True)
+
+
         modified_quantiles.to_csv(filename, sep='\t', index=False)
