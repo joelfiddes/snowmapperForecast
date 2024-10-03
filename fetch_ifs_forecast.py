@@ -255,34 +255,65 @@ for nc_file in nc_files:
     # 1. Deaccumulate (current step - last first_24_steps)
     # 2. Remove last timestep from SURF_fc1.nc from SURF_fc2.nc. _fc2 is a continuoation of fc1 just at differnet timestep
     # 3. Devide by timestep to get accumulated m per hour (input to TopoPyScale, same as era5)
-    accumulated_var = subset["tp"]
 
-    if nc_file == "SURF_fc1.nc":
-        lasttimestep_forecast1_tp = accumulated_var.isel(time=-1)
-    if nc_file == "SURF_fc2.nc":
-        accumulated_var = accumulated_var - lasttimestep_forecast1_tp
+    # try / except needed to handle different versions of api deliver tp/param193.1.0
+    try:
+        accumulated_var = subset["tp"]
 
-    # Calculate the difference between consecutive forecast steps manually, step (n) - step (n-1) in shift first timestep is filled with 0.
-    deaccumulated_var = accumulated_var - accumulated_var.shift(time=1, fill_value=0)
+        if nc_file == "SURF_fc1.nc":
+            lasttimestep_forecast1_tp = accumulated_var.isel(time=-1)
+        if nc_file == "SURF_fc2.nc":
+            accumulated_var = accumulated_var - lasttimestep_forecast1_tp
+
+        # Calculate the difference between consecutive forecast steps manually, step (n) - step (n-1) in shift first timestep is filled with 0.
+        deaccumulated_var = accumulated_var - accumulated_var.shift(time=1, fill_value=0)
 
 
 
-        # divide by timesteop to get accumulation over 1h
-    if nc_file == "SURF_fc1.nc":
-        deaccumulated_var = deaccumulated_var/3
-    if nc_file == "SURF_fc2.nc":
-        deaccumulated_var = deaccumulated_var/6
+            # divide by timesteop to get accumulation over 1h
+        if nc_file == "SURF_fc1.nc":
+            deaccumulated_var = deaccumulated_var/3
+        if nc_file == "SURF_fc2.nc":
+            deaccumulated_var = deaccumulated_var/6
 
-    # rename
-    # deaccumulated_rename = deaccumulated_var.rename('tp')
-    # # Update the Dataset with the calculated variable
-    # subset['tp'] = deaccumulated_rename
-    # # Drop the variable from the Dataset
-    # subset = subset.drop_vars('param193.1.0')
-    # Update the Dataset with the calculated variable
-    subset['tp'] = deaccumulated_var
+        # rename
+        # deaccumulated_rename = deaccumulated_var.rename('tp')
+        # # Update the Dataset with the calculated variable
+        # subset['tp'] = deaccumulated_rename
+        # # Drop the variable from the Dataset
+        # subset = subset.drop_vars('param193.1.0')
+        # Update the Dataset with the calculated variable
+        subset['tp'] = deaccumulated_var
 
-    
+    except:
+        accumulated_var = subset["param193.1.0'"]
+
+        if nc_file == "SURF_fc1.nc":
+            lasttimestep_forecast1_tp = accumulated_var.isel(time=-1)
+        if nc_file == "SURF_fc2.nc":
+            accumulated_var = accumulated_var - lasttimestep_forecast1_tp
+
+        # Calculate the difference between consecutive forecast steps manually, step (n) - step (n-1) in shift first timestep is filled with 0.
+        deaccumulated_var = accumulated_var - accumulated_var.shift(time=1, fill_value=0)
+
+
+
+            # divide by timesteop to get accumulation over 1h
+        if nc_file == "SURF_fc1.nc":
+            deaccumulated_var = deaccumulated_var/3
+        if nc_file == "SURF_fc2.nc":
+            deaccumulated_var = deaccumulated_var/6
+
+        # rename
+        deaccumulated_rename = deaccumulated_var.rename('tp')
+        # Update the Dataset with the calculated variable
+        subset['tp'] = deaccumulated_rename
+        # Drop the variable from the Dataset
+        subset = subset.drop_vars('param193.1.0')
+        # Update the Dataset with the calculated variable
+
+
+
     # procees SSRD which is accumulated J/m2 since start of forecast (SURF_fc1.nc). Three important points:
     # 1. Deaccumulate (current step - last first_24_steps)
     # 2. Remove last timestep from SURF_fc1.nc from SURF_fc2.nc. _fc2 is a continuoation of fc1 just at differnet timestep
