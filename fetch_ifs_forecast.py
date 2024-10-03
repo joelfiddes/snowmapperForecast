@@ -286,7 +286,7 @@ for nc_file in nc_files:
         subset['tp'] = deaccumulated_var
 
     except:
-        accumulated_var = subset["param193.1.0'"]
+        accumulated_var = subset["param193.1.0"]
 
         if nc_file == "SURF_fc1.nc":
             lasttimestep_forecast1_tp = accumulated_var.isel(time=-1)
