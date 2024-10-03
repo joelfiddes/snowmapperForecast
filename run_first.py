@@ -154,7 +154,7 @@ def main(mydir):
     # strftime('%Y%m%d')
 
     # Prepare the output directory
-    newdir = os.path.join(mainwdir, f"sim_latest/")
+    newdir = os.path.join(mainwdir, f"sim_archive/")
     clean_and_prepare_output_dir(mainwdir, newdir)
 
     # Update configuration paths

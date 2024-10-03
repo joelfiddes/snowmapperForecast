@@ -3,6 +3,11 @@ import re
 import glob
 import sys
 from TopoPyScale import sim_fsm as sim
+import pandas as pd
+
+# first run goes to sim archive, while sim_latest is empty so nothing is merged
+# all subsequent runs write to sim_latest then merged with the extenteding sim_archive files
+# finally copy to output directory
 
 def create_directory(path):
     """
@@ -69,15 +74,6 @@ def concat_fsm(mydir):
                     outfile.write(infile.read())
 
 
-import os
-import glob
-import pandas as pd
-
-
-
-import os
-import glob
-import pandas as pd
 
 def concat_fsm_with_overwrite(mydir):
     """
@@ -89,7 +85,7 @@ def concat_fsm_with_overwrite(mydir):
     """
     archive_dir = os.path.join(mydir, "sim_archive/outputs")
     latest_dir = os.path.join(mydir, "sim_latest/outputs")
-    output_dir = os.path.join(mydir, "outputs")
+    output_dir = os.path.join(mydir, "sim_archive/outputs")
     
     os.makedirs(output_dir, exist_ok=True)  # Ensure the output directory exists
 
@@ -138,9 +134,7 @@ def concat_fsm_with_overwrite(mydir):
 
 
 
-# Example usage
-mydir = './D100'
-concat_fsm_with_overwrite(mydir)
+
 
 
 
@@ -177,7 +171,6 @@ def sort_data_hydro(directory):
 def simulate_fsm(mydir):
     """
     Simulate FSM using the concatenated files.
-    
     Parameters:
     - mydir (str): Directory containing the simulation outputs.
     """
@@ -189,8 +182,36 @@ def simulate_fsm(mydir):
         sim.fsm_nlst(31, myfile, 24)
         sim.fsm_sim(f"./fsm_sims/nlst_FSM_pt_{nsim}.txt", "./FSM")
 
+def copy_stuff(mydir):
+    import shutil
+    import os
+
+    # Define the source and destination directories
+    src_dir = os.path.join(mydir, "sim_archive/outputs")
+    dest_dir = os.path.join(mydir, "outputs")
+
+    # Ensure the destination directory exists
+    if not os.path.exists(dest_dir):
+        os.makedirs(dest_dir)
+
+    # Copy all contents from source to destination
+    for item in os.listdir(src_dir):
+        src_path = os.path.join(src_dir, item)
+        dest_path = os.path.join(dest_dir, item)
+
+        # Copy files and directories
+        if os.path.isdir(src_path):
+            shutil.copytree(src_path, dest_path, dirs_exist_ok=True)  # Copy directory
+        else:
+            shutil.copy2(src_path, dest_path)  # Copy file
+
+
 def main(mydir):
-    concat_fsm(mydir)
+    # Example usage
+
+    concat_fsm_with_overwrite(mydir)
+    copy_stuff(mydir)
+    #concat_fsm(mydir)
     #sort_data_hydro(os.path.join(mydir, "outputs"))
     simulate_fsm(mydir)
     print("FSM simulation complete.")

@@ -205,7 +205,7 @@ def merge_datasets(pattern1, pattern2, output_path):
     ds_grid2_interp = xr.merge(ds_grid2_interp_list)
 
     # Now merge both datasets into a single one
-    ds_merged = xr.merge([ds_grid1, ds_grid2_interp], compat='override')
+    ds_merged = xr.merge([ds_grid1, ds_grid2_interp])
 
     # Save the merged dataset to a new NetCDF file
     ds_merged.to_netcdf(output_path)
