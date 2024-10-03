@@ -272,13 +272,13 @@ def merge_datasets_filter(pattern1, pattern2, output_path):
     ]
     
     # Merge all Grid 1 files into a single dataset
-    ds_grid1 = xr.merge(ds_grid1_list, compat='override')
+    ds_grid1 = xr.merge(ds_grid1_list)
     
     # Merge all Grid 2 (interpolated) files into a single dataset
-    ds_grid2_interp = xr.merge(ds_grid2_interp_list, compat='override')
+    ds_grid2_interp = xr.merge(ds_grid2_interp_list)
     
     # Now merge both datasets into a single one
-    ds_merged = xr.merge([ds_grid1, ds_grid2_interp], compat='override') # override”: skip comparing and pick variable from first dataset ie era5 gets prioritised if overlap exists
+    ds_merged = xr.merge([ds_grid1, ds_grid2_interp]) # override”: skip comparing and pick variable from first dataset ie era5 gets prioritised if overlap exists
     
     # Save the merged dataset to a new NetCDF file
     ds_merged.to_netcdf(output_path)
