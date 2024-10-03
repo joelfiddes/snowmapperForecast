@@ -240,10 +240,6 @@ def calculate_geopotential(P, T, P0):
 # print("Geopotential height at surface:", Z_surface, "m")
 
 
-
-
-
-
 # Define the geographical subset (bounding box)
 lat_range = (32, 45)  # Example latitude range (20N to 30N)
 lon_range = (59, 81)  # Example longitude range (30E to 40E)
@@ -259,7 +255,7 @@ for nc_file in nc_files:
     # 1. Deaccumulate (current step - last first_24_steps)
     # 2. Remove last timestep from SURF_fc1.nc from SURF_fc2.nc. _fc2 is a continuoation of fc1 just at differnet timestep
     # 3. Devide by timestep to get accumulated m per hour (input to TopoPyScale, same as era5)
-    accumulated_var = subset["param193.1.0"]
+    accumulated_var = subset["tp"]
 
     if nc_file == "SURF_fc1.nc":
         lasttimestep_forecast1_tp = accumulated_var.isel(time=-1)
@@ -278,11 +274,13 @@ for nc_file in nc_files:
         deaccumulated_var = deaccumulated_var/6
 
     # rename
-    deaccumulated_rename = deaccumulated_var.rename('tp')
+    # deaccumulated_rename = deaccumulated_var.rename('tp')
+    # # Update the Dataset with the calculated variable
+    # subset['tp'] = deaccumulated_rename
+    # # Drop the variable from the Dataset
+    # subset = subset.drop_vars('param193.1.0')
     # Update the Dataset with the calculated variable
-    subset['tp'] = deaccumulated_rename
-    # Drop the variable from the Dataset
-    subset = subset.drop_vars('param193.1.0')
+    subset['tp'] = deaccumulated_var
 
     
     # procees SSRD which is accumulated J/m2 since start of forecast (SURF_fc1.nc). Three important points:
