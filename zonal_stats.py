@@ -1,9 +1,10 @@
 import pandas as pd
 import numpy as np
+from datetime import datetime, timedelta
 
-# Define the start and end dates (this of course changes by year use my old code to make more generic?)
-
-
+# Define the start of forecast
+start_time = datetime.now()
+first_timestamp = start_time - timedelta(days=7)
 # ==============================================================================
 # CATCHMENT STATISTICS
 # ==============================================================================

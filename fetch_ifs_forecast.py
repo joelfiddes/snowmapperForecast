@@ -29,40 +29,39 @@ import xarray as xr
 import numpy as np
 from matplotlib import pyplot
 import matplotlib
-matplotlib.use('TkAgg')
+#matplotlib.use('TkAgg')
 
-mydir = sys.argv[1] # /home/joel/sim/TPS_2024
-os.chdir(mydir)
+#mydir = sys.argv[1] # /home/joel/sim/TPS_2024
 
-directory_path = mydir + '/master/inputs/climate/forecast/'
+
+directory_path = './master/inputs/climate/forecast/'
+
 # Check if the directory exists, and create it if it doesn't
 if not os.path.exists(directory_path):
     os.makedirs(directory_path)
 
-
+os.chdir(directory_path)
 # data must be available by UTC+6 10am (Bishkek) eg 4am UTC, therefore need to use previous major fc step which is 12 UTC
 fctime = 0
 
 # removed implementation as the day is handle automatically based on last available fctime
 # can be used to specify precise forecasts up to three day ago
 mydate= 0 #  0 = today (default) -1 = yesterday -2 = day before yesterdaz -3 = day before that. Valid values 0-3.
-outdir = './master/inputs/forecast/'
-# Check if the directory exists, and create it if it doesn't
-if not os.path.exists(outdir):
-    os.makedirs(outdir)
-os.chdir(outdir)
 
-directory_path1 = "gapfill"
-# Check if the directory exists, and create it if it doesn't
-if not os.path.exists(directory_path1):
-    os.makedirs(directory_path1)
 
-directory_path2 = "tmp"
+#outdir = './inputs/forecast/'
 # Check if the directory exists, and create it if it doesn't
-if not os.path.exists(directory_path2):
-    os.makedirs(directory_path2)
+#if not os.path.exists(outdir):
+#    os.makedirs(outdir)
+#os.chdir(outdir)
 
-os.chdir("tmp")
+
+tmp_path = "tmp"
+# Check if the directory exists, and create it if it doesn't
+if not os.path.exists(tmp_path):
+    os.makedirs(tmp_path)
+
+os.chdir(tmp_path)
 # clean up
 files2delete = glob.glob("*")
 for file in files2delete:
@@ -107,7 +106,7 @@ client.retrieve(
      step=[i for i in range(0, 147, 3)], #147
      type="fc",
      param=["gh", "u", "v", "r", "q", "t"],
-     levelist=[1000, 925, 850, 700, 500, 300],
+     levelist=[1000, 925, 850, 700,600, 500, 400, 300],
      target="PLEV_fc1.grib2",
  )
 
@@ -345,6 +344,10 @@ for nc_file in nc_files:
     # compute geopotential z
     subset['z'] = calculate_geopotential(subset['sp'], subset['t2m'], subset['msl'])
 
+    # Drop uneeded variables from the Dataset
+    subset = subset.drop_vars('msl')
+    subset = subset.squeeze('height', drop=True)
+
     subset.to_netcdf(f'subset_{nc_file}')
 
     # check de accumulation
@@ -361,6 +364,8 @@ for nc_file in nc_files:
     subset['z'] = subset['gh']*9.81
     subset['level'] = subset['level']/100.  # pressure level pa to hpa
     subset = subset.isel(level=slice(None, None, -1) ) # reverse order of levels
+    # Drop uneeded variables from the Dataset
+    subset = subset.drop_vars('gh')
     subset.to_netcdf(f'subset_{nc_file}')
 
 os.remove("SURF_fc1.nc")
@@ -514,7 +519,6 @@ ds_concatenated.to_netcdf('PLEV_cat.nc')
 
 # interpolat 3h - 1h
 ds = xr.open_dataset('PLEV_cat.nc')
-# Interpolate the data from 6h to 3h timestep
 year = str(ds['time.year'][0].values)  # Extract hour and zero-pad if necessary
 month = str(ds['time.month'][0].values).zfill(2)  # Extract minute and zero-pad if necessary
 day = str(ds['time.day'][0].values).zfill(2)  # Extract second and zero-pad if necessary
@@ -529,26 +533,33 @@ cmd = "cdo inttime,"+date_string+","+time_string+",1hour " +"PLEV_cat.nc " +"PLE
 os.system(cmd)
 
 # cleanup
-os.rename("SURF_cat_1h.nc",  "../gapfill/SURF_fc.nc")
-os.rename( "PLEV_cat_1h.nc",  "../gapfill/PLEV_fc.nc")
+os.rename("SURF_cat_1h.nc",  "../SURF_FC.nc")
+os.rename( "PLEV_cat_1h.nc",  "../PLEV_FC.nc")
 
-
-
+# handle final compatability issues here
 
 # creste hindcast product
-ds1 = xr.open_dataset("../gapfill/PLEV_fc.nc")
+ds1 = xr.open_dataset("../PLEV_FC.nc")
 # first day of forecast
 thind = pd.to_datetime((ds1['time']))[0:24]
 day = str(thind[0])[0:10]  
 first_24_steps = ds1.isel(time=slice(0, 24))  
-first_24_steps.to_netcdf( '../gapfill/PLEV_'+day+'.nc')
+first_24_steps.to_netcdf( '../PLEV_FC_'+day+'.nc', mode='w')
 
-ds1 = xr.open_dataset("../gapfill/SURF_fc.nc")
+ds1 = xr.open_dataset("../SURF_FC.nc")
 # first day of forecast
 thind = pd.to_datetime((ds1['time']))[0:24]
 day = str(thind[0])[0:10]  
 first_24_steps = ds1.isel(time=slice(0, 24))  
-first_24_steps.to_netcdf( '../gapfill/SURF_'+day+'.nc')
+
+# Check if file exists and delete it - was havingfile locked issues, mod='w' seems to work'
+# if os.path.exists(file_path):
+#     os.remove(file_path)
+#     print(f"Deleted existing file: {file_path}")
+# else:
+#     print(f"No existing file found at: {file_path}")
+
+first_24_steps.to_netcdf( '../SURF_FC_'+day+'.nc', mode='w')
 
 
 
@@ -572,8 +583,16 @@ first_24_steps.to_netcdf( '../gapfill/SURF_'+day+'.nc')
 # Concatenate PLEV
 
 
+# Check if file exists and delete it - was havingfile locked issues, mod='w' seems to work'
+file_path = "PLEV_merged.nc"
+if os.path.exists(file_path):
+    os.remove(file_path)
+    print(f"Deleted existing file: {file_path}")
+else:
+    print(f"No existing file found at: {file_path}")
 
-cmd = "cdo --sortname mergetime  ../gapfill/PLEV* PLEV_merged.nc"
+
+cmd = "cdo --sortname mergetime  ../PLEV_FC* PLEV_merged.nc" # this triggers warning
 os.system(cmd)
 
 # remove duplicate timestamp
@@ -600,17 +619,31 @@ _, unique_indices = np.unique(time_index, return_index=True)
 # Select only the unique timestamps
 ds_unique = ds.isel(time=unique_indices)
 
+file_path = '../PLEV_FC.nc'
+if os.path.exists(file_path):
+    os.remove(file_path)
+    print(f"Deleted existing file: {file_path}")
+else:
+    print(f"No existing file found at: {file_path}")
+
 # Save the cleaned dataset to a new NetCDF file
-ds_unique.to_netcdf('../../climate/forecast/PLEV_fc_cat.nc')
+ds_unique.to_netcdf(file_path)
 
-print("Duplicate timestamps removed. Cleaned Hindcast and forecast dataset saved as ./master/inputs//climate/forecast/PLEV_fc_cat.nc")
+print("Duplicate timestamps removed. Cleaned Hindcast and forecast dataset saved as ./master/inputs//climate/forecast/PLEV_FC.nc")
 
 
+# Check if file exists and delete it - was havingfile locked issues, mod='w' seems to work'
+file_path = "SURF_merged.nc"
+if os.path.exists(file_path):
+    os.remove(file_path)
+    print(f"Deleted existing file: {file_path}")
+else:
+    print(f"No existing file found at: {file_path}")
 
 # Concatenate SURF
-cmd = "cdo --sortname mergetime  ../gapfill/SURF* SURF_merged.nc"
+cmd = "cdo --sortname mergetime  ../SURF_FC* SURF_merged.nc"
 os.system(cmd)
-print(cmd)
+
 
 # remove duplicate timestamp
 
@@ -637,29 +670,37 @@ _, unique_indices = np.unique(time_index, return_index=True)
 # Select only the unique timestamps
 ds_unique = ds.isel(time=unique_indices)
 
+file_path = '../SURF_FC.nc'
+if os.path.exists(file_path):
+    os.remove(file_path)
+    print(f"Deleted existing file: {file_path}")
+else:
+    print(f"No existing file found at: {file_path}")
+
+
 # Save the cleaned dataset to a new NetCDF file
-ds_unique.to_netcdf('../../climate/forecast/SURF_fc_cat.nc')
+ds_unique.to_netcdf(file_path)
 
-print("Duplicate timestamps removed. Cleaned Hindcast and forecast dataset saved as ./master/inputs/climate/forecast/SURF_fc_cat.nc")
+print("Duplicate timestamps removed. Cleaned Hindcast and forecast dataset saved as ./master/inputs/climate/forecast/SURF_FC.nc")
 
 
-os.remove("PLEV_cat.nc")
-os.remove("SURF_cat.nc")
-os.remove("PLEV_merged.nc")
-os.remove("SURF_merged.nc")
+# os.remove("PLEV_cat.nc")
+# os.remove("SURF_cat.nc")
+# os.remove("PLEV_merged.nc")
+# os.remove("SURF_merged.nc")
 
-# Get the current working directory
-current_directory = os.getcwd()
+# # Get the current working directory
+# current_directory = os.getcwd()
 
-# Define the relative path to the target directory
-relative_path = '../../climate/forecast/'
+# # Define the relative path to the target directory
+# relative_path = '../'
 
-# Construct the full path
-target_directory = os.path.join(current_directory, relative_path)
+# # Construct the full path
+# target_directory = os.path.join(current_directory, relative_path)
 
-# Change the current working directory to the target directory
-os.chdir(target_directory)
-print(target_directory)
+# # Change the current working directory to the target directory
+# os.chdir(target_directory)
+# print(target_directory)
 
 
 def trim_forecast_data2(climate_file, forecast_file, output_file,last_joint_timestamp):
@@ -721,30 +762,30 @@ def trim_forecast_data2(climate_file, forecast_file, output_file,last_joint_time
         ds1.close()
         ds2.close()
         
-current_month = pd.Timestamp.now().month
-current_year = pd.Timestamp.now().year
+# current_month = pd.Timestamp.now().month
+# current_year = pd.Timestamp.now().year
     
-# Trim forecast data to make sure no overlap with latest download month
-latest_nc_file_surf = f'../SURF_{current_year:04d}{current_month:02d}.nc'
-latest_nc_file_plev = f'../PLEV_{current_year:04d}{current_month:02d}.nc'
+# # Trim forecast data to make sure no overlap with latest download month
+# latest_nc_file_surf = f'../SURF_{current_year:04d}{current_month:02d}.nc'
+# latest_nc_file_plev = f'../PLEV_{current_year:04d}{current_month:02d}.nc'
 
-# find minimum last timestamp across both files
-dss = xr.open_dataset(latest_nc_file_surf)
-dsp = xr.open_dataset(latest_nc_file_plev)
-last_time_file1 = dss.time[-1].values
-last_time_file2 = dsp.time[-1].values
-# Compare the two time values
-if last_time_file1 < last_time_file2:
-    last_joint_timestamp =  last_time_file1
-else:
-    last_joint_timestamp =  last_time_file2
+# # find minimum last timestamp across both files
+# dss = xr.open_dataset(latest_nc_file_surf)
+# dsp = xr.open_dataset(latest_nc_file_plev)
+# last_time_file1 = dss.time[-1].values
+# last_time_file2 = dsp.time[-1].values
+# # Compare the two time values
+# if last_time_file1 < last_time_file2:
+#     last_joint_timestamp =  last_time_file1
+# else:
+#     last_joint_timestamp =  last_time_file2
 
 
-trim_forecast_data2(latest_nc_file_surf, 'SURF_fc_cat.nc', 'SURF_fc.nc', last_joint_timestamp)
-trim_forecast_data2(latest_nc_file_plev, 'PLEV_fc_cat.nc', 'PLEV_fc.nc', last_joint_timestamp)
+#trim_forecast_data2(latest_nc_file_surf, 'SURF_fc_cat.nc', '../SURF_fc.nc', last_joint_timestamp)
+#trim_forecast_data2(latest_nc_file_plev, 'PLEV_fc_cat.nc', '../PLEV_fc.nc', last_joint_timestamp)
 
-os.remove('SURF_fc_cat.nc')
-os.remove('PLEV_fc_cat.nc')
+#os.remove('SURF_fc_cat.nc')
+#os.remove('PLEV_fc_cat.nc')
     
     
     
