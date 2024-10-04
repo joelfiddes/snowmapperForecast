@@ -1,6 +1,8 @@
 from TopoPyScale import topoclass as tc
 import os
 import sys
+
+
 mydir = sys.argv[1]
 os.chdir(mydir)
 config_file = './config.yml'

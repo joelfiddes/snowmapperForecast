@@ -519,7 +519,7 @@ def main():
         downloadedPLEVfile = target = mp.config.climate.path  + "/forecast/PLEV_%04d%02d%02d.nc" % (lastday.year, lastday.month, lastday.day)
         downloadedSURFfile = target = mp.config.climate.path  + "/forecast/SURF_%04d%02d%02d.nc" % (lastday.year, lastday.month, lastday.day)
 
-    mp.remap_netcdf('/home/joel/sim/snowmapper_2025/master/inputs/climate/forecast'  )
+    mp.remap_netcdf('./inputs/climate/forecast'  )
 
 
 

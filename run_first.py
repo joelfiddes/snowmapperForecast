@@ -125,8 +125,8 @@ def perform_simulation(mp):
     Parameters:
     - mp (Topoclass): The Topoclass object with the loaded configuration.
     """
-    if os.path.exists("outputs/ds_solar.nc"):
-        os.remove("outputs/ds_solar.nc")
+    if os.path.exists(mp.config.project.directory+"/outputs/ds_solar.nc"):
+        os.remove(mp.config.project.directory+"/outputs/ds_solar.nc")
     mp.extract_topo_param()
     mp.compute_horizon()
     mp.compute_solar_geometry()
