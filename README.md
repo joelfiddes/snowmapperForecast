@@ -13,6 +13,12 @@
 - Snow accumulation: capturing snowfall and snowpack formation. 
 - Melting and energy balance: using different approaches, from simple degree-day models to energy-balance approaches. 
 - Albedo decay: tracking how snow reflectivity changes over time. 
-- Snow density and compaction: representing changes in snow density due to settling and compaction over time. 
+- Snow density and compaction: representing changes in snow density due to settling and compaction over time.
+
+## Methods
+
+## Data
+
+## Operational deployment
 
 
