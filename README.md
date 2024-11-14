@@ -48,6 +48,17 @@ To run numerical models at high resolution over very large domains some form of 
 
 
 ## Data
+SnowMapper is driven by two ECMWF data sources which are both output of the IFS NWP model:
+
+(1) ECMWF ERA5 / ERA5T reanalysis https://www.ecmwf.int/en/forecasts/dataset/ecmwf-reanalysis-v5
+(2) ECMWF open forecast https://www.ecmwf.int/en/forecasts/datasets/open-data
+
+Reanalysis provides data with a latency of 5 days. 10 day forecasts are issued at a varying timestep (3-6h) twice per day with start at 00 UTC and 12 UTC. Release is c. 7h after start timestep.
+
+Minor differences between the datasets in available variables are handled internally by SnowMapper, ensuring they are passed to TopoPyscale as a consistent, seamless time series that spans a moving window from T-30 days to T+10 days, where T is the current day.
+
+
+
 
 ## Operational deployment
 
