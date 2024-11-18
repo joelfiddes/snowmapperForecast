@@ -4,8 +4,8 @@ from TopoPyScale import fetch_era5 as fe
 
 SNOW_MODEL = "joel-snow-model"
 SNOW_MODEL_BUCKET = "snow-model-data-source"
-aws_access_key_id = "AKIAROB2RVVCHEK5X3R2"
-aws_secret_access_key ="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"
+aws_access_key_id = "*****"
+aws_secret_access_key ="*****"
 spatial_directory = "./spatial/"
 
 # Todays era5 file (6days ago)
