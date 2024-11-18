@@ -42,6 +42,8 @@ def process_variable(var_name, unit, epsg, dem_res):
         output_var_name = "HS"
     if var_name == "rof":
         output_var_name = "ROF"
+    if var_name == "gst":
+        output_var_name = "GST"
 
     df = sim.agg_by_var_fsm(var=var_name)
     grid_stack, lats, lons = sim.topo_map_sim(df, 1, "float32", dem_res)
@@ -67,6 +69,9 @@ def main(mydir):
 
     # Process and write snow runoff (ROF)
     process_variable("rof", "mm", config.dem.epsg, config.dem.dem_resol)
+
+    # Process and write ground surface temperature (GST)
+    process_variable("gst", "k", config.dem.epsg, config.dem.dem_resol)
 
 if __name__ == "__main__":
     mydir = sys.argv[1]
