@@ -1,12 +1,16 @@
 import upload as s3
 from TopoPyScale import fetch_era5 as fe
+import boto3
 
+# Use default profile credentials
+session = boto3.Session()
 
 SNOW_MODEL = "joel-snow-model"
 SNOW_MODEL_BUCKET = "snow-model-data-source"
-aws_access_key_id = "AKIAROB2RVVCHEK5X3R2"
-aws_secret_access_key ="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"
+aws_access_key_id = credentials.access_key
+aws_secret_access_key = credentials.secret_key
 spatial_directory = "./spatial/"
+
 
 # Todays era5 file (6days ago)
 date_str = fe.return_last_fullday()
