@@ -551,39 +551,7 @@ def main():
 
     config_file = './config.yml'
     
-    # Initialize Topoclass and perform operations
-    mp = tc.Topoclass(config_file)
-
-    # download latest climate data
-    date_str = mp.get_lastday()
-    #date_str = "2024-09-25" 
-    lastday = datetime.strptime(date_str, '%Y-%m-%d')
-    print ("Downloading from CDS PLEV and SURF for day: " +date_str)
-
-
-
-
-    # # Create a ThreadPoolExecutor to run functions concurrently
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        # Submit both functions to run in parallel
-        future_surf = executor.submit(mp.get_era5_snowmapper, 'surf', lastday)
-        future_plev = executor.submit(mp.get_era5_snowmapper, 'plev', lastday)
-            
-        # Wait for both functions to complete
-        concurrent.futures.wait([future_surf, future_plev])
-        
-        # Continue the rest of your script after both functions are done
-        print("Both functions finished, continuing with the rest of the script.")
-        downloadedPLEVfile = target = mp.config.climate.path  + "/forecast/PLEV_%04d%02d%02d.nc" % (lastday.year, lastday.month, lastday.day)
-        downloadedSURFfile = target = mp.config.climate.path  + "/forecast/SURF_%04d%02d%02d.nc" % (lastday.year, lastday.month, lastday.day)
-
-    mp.remap_netcdf('./inputs/climate/forecast'  )
-
-
-
-    # check for existing forecast file and delete if era5 exists
-    handle_forecast_file(downloadedPLEVfile, prefix="PLEV", archive=True)
-    handle_forecast_file(downloadedSURFfile, prefix="SURF", archive=True)
+  
     
 
     
@@ -601,7 +569,7 @@ def main():
         for file_path in file_list:
             print(f"Processing file: {file_path}")
             # check if SURF is a netcdf
-            process_file(file_path, "./inputs/climate/forecast/")
+            process_file(file_path, ".")
     
 
 
