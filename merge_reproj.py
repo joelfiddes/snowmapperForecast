@@ -17,8 +17,8 @@ print("upload_to_aws =" + upload_to_aws)
 SNOW_MODEL = "joel-snow-model"
 SNOW_MODEL_BUCKET = "snow-model-data-source"
 PARAMETERS = ["HS", "SWE"]
-aws_access_key_id = "AKIAROB2RVVCHEK5X3R2"
-aws_secret_access_key ="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"
+aws_access_key_id = "xxxx"
+aws_secret_access_key ="xxxx"
 
 #year= sys.argv[1]
 startTime = datetime.now()
