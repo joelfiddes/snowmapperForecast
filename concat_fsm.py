@@ -98,6 +98,7 @@ def concat_fsm_with_overwrite(mydir):
 
     # Loop over each file name
     for myname in filenames:
+        print(myname)
         archive_file = os.path.join(archive_dir, myname)
         latest_file = os.path.join(latest_dir, myname)
 

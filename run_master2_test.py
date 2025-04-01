@@ -550,7 +550,13 @@ def main():
     os.chdir(mydir)
 
     config_file = './config.yml'
+
     
+    # Initialize Topoclass and perform operations
+    mp = tc.Topoclass(config_file)
+    
+    mp.process_SURF_file('./inputs/climate/forecast')
+    mp.remap_netcdf('./inputs/climate/forecast'  )
   
     
 
@@ -560,19 +566,6 @@ def main():
     pattern2 = './inputs/climate/forecast/SURF_FC_*.nc'
     output_file = './inputs/climate/forecast/SURF_merged_output.nc'
     
-    # Expand the wildcard pattern into a list of files
-    file_list = glob.glob(pattern1)
-
-    if not file_list:
-        print(f"No files matched the pattern: {input_pattern}")
-    else:
-        for file_path in file_list:
-            print(f"Processing file: {file_path}")
-            # check if SURF is a netcdf
-            process_file(file_path, ".")
-    
-
-
     # Call the function to merge the datasets
     ds = merge_datasets_filter(pattern1, pattern2, output_file)
 
