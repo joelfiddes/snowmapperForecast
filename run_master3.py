@@ -753,9 +753,27 @@ def merge_climate_files3(data_dir, prefix, output_file):
         pieces, dim="time", join="override", combine_attrs="override"
     )
 
-    # 7. Streamed write: dask computes one time-chunk at a time, single-threaded
+    # 7. Pin the output encoding instead of inheriting it. Opening the daily
+    # files individually carries their deflate settings into the result, which
+    # makes a pleasingly small file and a slow one: run_latest re-reads this
+    # file once per point across 2000 points, so paying a decompress on every
+    # read is the wrong trade, and netCDF4's own chunk heuristic picked a shape
+    # (2817 x 16 x 28) badly matched to that per-point access pattern.
+    #
+    # Uncompressed and contiguous is what the pre-fix pipeline actually wrote --
+    # byte arithmetic on those outputs is exact: SURF 953,985,257 B is precisely
+    # 7 vars x 8449 x 48 x 84 x 4 B, PLEV 6,540,866,523 B precisely 6 vars with
+    # the extra level axis. Keeping that identical means this change stays a
+    # memory fix and nothing else.
+    encoding = {
+        name: {"zlib": False, "complevel": 0, "shuffle": False,
+               "contiguous": True, "chunksizes": None}
+        for name in ds_merged.data_vars
+    }
+
+    # 8. Streamed write: dask computes one time-chunk at a time, single-threaded
     # to keep peak RAM predictable and avoid worker contention on small instances.
-    delayed = ds_merged.to_netcdf(output_file, compute=False)
+    delayed = ds_merged.to_netcdf(output_file, encoding=encoding, compute=False)
     delayed.compute(scheduler="single-threaded")
 
 

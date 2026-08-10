@@ -5,6 +5,7 @@ then asserts the merged output is what we expect. Stubs TopoPyScale/munch so the
 real run_master3.py can be imported on the Mac.
 """
 import shutil
+import subprocess
 import sys
 import tempfile
 import types
@@ -145,6 +146,56 @@ def run_corrupt_detection(tmp):
     return False
 
 
+def run_encoding_check(tmp):
+    """Output must be uncompressed even when the source dailies are compressed.
+
+    Opening the per-day files individually carries their deflate settings into
+    the result unless the write pins encoding explicitly. The pre-fix pipeline
+    wrote uncompressed files (byte-exact: SURF 953,985,257 B = 7 vars x 8449 x
+    48 x 84 x 4 B), and run_latest re-reads the result once per point across
+    2000 points, so a decompress on every read would be a real regression.
+    """
+    tmp.mkdir(parents=True, exist_ok=True)
+    for f in tmp.glob("*.nc"):
+        f.unlink()
+
+    for day, val in [("2026-08-01", 1.0), ("2026-08-02", 2.0)]:
+        t = hours(day)
+        xr.Dataset(
+            {"t2m": (("time", "latitude", "longitude"),
+                     np.full((len(t), len(LAT), len(LON)), val, dtype="float32"))},
+            coords={"time": t, "latitude": LAT, "longitude": LON},
+        ).to_netcdf(
+            tmp / f"SURF_{day.replace('-', '')}.nc",
+            encoding={"t2m": {"zlib": True, "complevel": 1, "shuffle": True}},
+        )
+    make(tmp / "SURF_FC.nc", hours("2026-08-03"), 9.0, with_level=False)
+
+    out = tmp / "merged.nc"
+    rm.merge_climate_files3(str(tmp), "SURF", str(out))
+
+    def hdr_of(p):
+        return subprocess.run(["ncdump", "-h", "-s", str(p)],
+                              capture_output=True, text=True).stdout
+
+    src_compressed = "_DeflateLevel" in hdr_of(tmp / "SURF_20260801.nc")
+    hdr = hdr_of(out)
+    bare = 72 * len(LAT) * len(LON) * 4
+
+    checks = [
+        ("source dailies really are compressed", src_compressed),
+        ("output is NOT compressed", "_DeflateLevel" not in hdr),
+        ("output is contiguous", 't2m:_Storage = "contiguous"' in hdr),
+        ("output holds full uncompressed data", out.stat().st_size >= bare),
+    ]
+    print("\n--- output encoding ---")
+    ok = True
+    for name, passed in checks:
+        print(f"  {'PASS' if passed else 'FAIL'}  {name}")
+        ok &= bool(passed)
+    return ok
+
+
 if __name__ == "__main__":
     base = Path(tempfile.mkdtemp(prefix="mergetest-"))
     results = [
@@ -152,6 +203,7 @@ if __name__ == "__main__":
         run_case(base / "surf", "no level dim (SURF-like)", with_level=False),
         run_level_mismatch(base / "levels"),
         run_corrupt_detection(base / "corrupt"),
+        run_encoding_check(base / "encoding"),
     ]
     shutil.rmtree(base, ignore_errors=True)
     print("\n" + ("ALL PASS" if all(results) else "FAILURES PRESENT"))
