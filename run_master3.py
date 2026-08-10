@@ -450,7 +450,18 @@ def handle_forecast_file(era5_file_path, prefix="PLEV", archive=True):
     # Extract the date from the ERA5 filename
     era5_filename = os.path.basename(era5_file_path)
     date_str = era5_filename.split('_')[1].split('.')[0]  # Extract "YYYYMMDD"
-    
+
+    # Only stand down the forecast once its ERA5 replacement is actually on disk.
+    # Archiving unconditionally is what turned the failed 2026-08-03 PLEV
+    # download into a hard gap: the fallback was moved out of the way for a file
+    # that never arrived.
+    if not os.path.exists(era5_file_path):
+        print(
+            f"ERA5 file {era5_file_path} is missing -- keeping the {prefix} forecast "
+            f"for {date_str} in place to cover the gap."
+        )
+        return
+
     try:
         # Convert the date to the forecast file format "YYYY-MM-DD"
         file_date = datetime.strptime(date_str, "%Y%m%d").strftime("%Y-%m-%d")
@@ -592,62 +603,209 @@ from pathlib import Path
 import pandas as pd
 import xarray as xr
 
-def merge_climate_files3(data_dir, prefix, output_file):
-    """Memory-controlled merge: chunked dask I/O, single-threaded streaming write.
+def _to_ref_grid(ds, ref_lat, ref_lon):
+    """Put ds on the reference grid, skipping the interp when it already matches."""
+    if ds.latitude.equals(ref_lat) and ds.longitude.equals(ref_lon):
+        return ds
+    return ds.interp(latitude=ref_lat, longitude=ref_lon)
 
-    Refactored 2026-05-20 to avoid OOM. Was loading ~15 GB peak; now bounded by
-    time-chunk size (~few hundred MB). Logic identical to prior version:
-    ERA5 reanalysis takes priority, then daily forecasts fill gaps, then the
-    continuous 10-day forecast fills the tail.
+
+def _borrow_hours(hours, day, fc_daily_by_day, ds_fc_cont, ref_lat, ref_lon):
+    """Fetch `hours` for `day` from the daily forecast, falling back to the continuous one.
+
+    Both sources are small (24 h and 10 days respectively), so selecting an
+    explicit hour list off them is cheap even though it collapses chunking.
+
+    Returns None when neither source covers any of the requested hours.
+    """
+    if day in fc_daily_by_day:
+        ds = _to_ref_grid(
+            xr.open_dataset(fc_daily_by_day[day], chunks={"time": 24}), ref_lat, ref_lon
+        )
+        avail = pd.DatetimeIndex(pd.to_datetime(ds.time.values)).intersection(hours)
+        if len(avail):
+            return ds.sel(time=avail), "fc_daily"
+
+    if ds_fc_cont is not None:
+        avail = pd.DatetimeIndex(pd.to_datetime(ds_fc_cont.time.values)).intersection(hours)
+        if len(avail):
+            return ds_fc_cont.sel(time=avail), "fc_cont"
+
+    return None, None
+
+
+def merge_climate_files3(data_dir, prefix, output_file):
+    """Assemble the season's hourly forcing from disjoint, time-ordered pieces.
+
+    Source priority is unchanged: ERA5 reanalysis first, then the single-day
+    forecast that covers a missing ERA5 day, then the continuous 10-day
+    forecast for the tail. What changed is how the pieces are combined.
+
+    The previous version stacked two ``combine_first`` calls. Those outer-join
+    onto a union time index, and that reindex collapses dask's time chunking --
+    so the supposedly streamed write ended up materialising whole variables
+    (PLEV is 6 float32 vars x 8449 steps = 6.5 GB uncompressed). It peaked at
+    15.4 GB RSS and was OOM-killed on this 15 GiB instance on 2026-08-09,
+    leaving a header-only output whose longitude coordinate was entirely NaN,
+    which then broke run_latest with "All-NaN slice encountered".
+
+    Here each day of the season contributes exactly one piece, and the pieces
+    are built in chronological order, so assembly is a plain ``xr.concat``
+    along an already-sorted dimension -- no alignment, no reindex, chunking
+    preserved end to end. Peak memory is one time-chunk.
+
+    Output is left uncompressed, as before: run_latest re-reads this file once
+    per point (2000 points), and compression would trade a slower pipeline for
+    disk we are not short of.
     """
     data_dir = Path(data_dir)
 
-    # 1. ERA5 hourly reanalysis — chunked so dask streams it
-    era5_files = sorted(data_dir.glob(f"{prefix}_20*.nc"))
-    if not era5_files:
-        raise FileNotFoundError("No ERA5 files found")
-    ds_era5 = xr.open_mfdataset(era5_files, combine="by_coords", chunks={"time": 24})
-    # Tiny spatial coords — force load so they are not part of the dask graph
-    ref_lat = ds_era5.latitude.load()
-    ref_lon = ds_era5.longitude.load()
+    # 1. Index the available sources by the day they cover.
+    era5_by_day = {}
+    for f in sorted(data_dir.glob(f"{prefix}_20*.nc")):
+        m = re.fullmatch(rf"{re.escape(prefix)}_(\d{{8}})\.nc", f.name)
+        if m:
+            era5_by_day[pd.Timestamp(m.group(1))] = f
+    if not era5_by_day:
+        raise FileNotFoundError(f"No ERA5 {prefix}_YYYYMMDD.nc files found in {data_dir}")
 
-    # 2. Find gaps in ERA5 coverage
-    era5_times = pd.to_datetime(ds_era5.time.values)
-    expected_times = pd.date_range(start=era5_times.min(), end=era5_times.max(), freq="H")
-    missing_times = set(expected_times) - set(era5_times)
-
-    # 3. Single-day forecasts (only where ERA5 is missing)
-    fc_daily_files = sorted(data_dir.glob(f"{prefix}_FC_20*.nc"))
-    selected_fc_files = []
-    for f in fc_daily_files:
+    fc_daily_by_day = {}
+    for f in sorted(data_dir.glob(f"{prefix}_FC_20*.nc")):
         m = re.search(r"(\d{4}-\d{2}-\d{2})", f.name)
         if m:
-            file_date = pd.to_datetime(m.group(1))
-            hours = pd.date_range(file_date, file_date + pd.Timedelta("23H"), freq="H")
-            if any(h in missing_times for h in hours):
-                selected_fc_files.append(f)
+            fc_daily_by_day[pd.Timestamp(m.group(1))] = f
 
-    ds_fc_daily = None
-    if selected_fc_files:
-        ds_fc_daily = xr.open_mfdataset(selected_fc_files, combine="by_coords", chunks={"time": 24})
-        ds_fc_daily = ds_fc_daily.interp(latitude=ref_lat, longitude=ref_lon)
+    first_day, last_day = min(era5_by_day), max(era5_by_day)
 
-    # 4. Continuous forecast — chunked
+    # 2. Reference grid comes from the first ERA5 day; everything else is put on it.
+    with xr.open_dataset(era5_by_day[first_day]) as ds0:
+        ref_lat = ds0.latitude.load()
+        ref_lon = ds0.longitude.load()
+        ref_level = ds0.level.load() if "level" in ds0.coords else None
+
+    # 3. Continuous forecast, used for the tail and as last-resort gap fill.
     fc_cont_file = data_dir / f"{prefix}_FC.nc"
-    ds_fc_cont = xr.open_dataset(fc_cont_file, chunks={"time": 24})
-    ds_fc_cont = ds_fc_cont.interp(latitude=ref_lat, longitude=ref_lon)
+    ds_fc_cont = None
+    if fc_cont_file.exists():
+        ds_fc_cont = _to_ref_grid(
+            xr.open_dataset(fc_cont_file, chunks={"time": 24}), ref_lat, ref_lon
+        )
+    else:
+        print(f"[{prefix}] WARNING: no continuous forecast at {fc_cont_file}")
 
-    # 5. Merge with priority: ERA5 > daily forecast > continuous forecast
-    ds_base = ds_era5
-    if ds_fc_daily is not None:
-        ds_base = ds_base.combine_first(ds_fc_daily)
-    ds_merged = ds_base.combine_first(ds_fc_cont)
+    # 4. One piece per day, in order. Disjoint by construction.
+    pieces = []
+    filled_days, gap_days = [], []
 
-    # 6. Streamed write: dask computes one time-chunk at a time, single-threaded
+    for day in pd.date_range(first_day, last_day, freq="D"):
+        want = pd.date_range(day, day + pd.Timedelta("23h"), freq="h")
+
+        if day in era5_by_day:
+            piece = xr.open_dataset(era5_by_day[day], chunks={"time": 24})
+        else:
+            piece, source = _borrow_hours(
+                want, day, fc_daily_by_day, ds_fc_cont, ref_lat, ref_lon
+            )
+            if piece is None:
+                gap_days.append(day.date())
+                continue
+            filled_days.append((day.date(), source))
+
+        # Patch a short ERA5 day (rare, but it used to be handled hour-by-hour).
+        have = pd.DatetimeIndex(pd.to_datetime(piece.time.values))
+        short = want.difference(have)
+        if len(short):
+            patch, source = _borrow_hours(
+                short, day, fc_daily_by_day, ds_fc_cont, ref_lat, ref_lon
+            )
+            if patch is not None:
+                # <=24 steps, so sorting inside the day costs nothing.
+                piece = xr.concat([piece, patch], dim="time").sortby("time")
+                filled_days.append((day.date(), f"{source} (partial: {len(short)}h)"))
+            else:
+                print(f"[{prefix}] {day.date()}: {len(short)}h missing, no source to fill")
+
+        if ref_level is not None and "level" in piece.coords:
+            if not piece.level.equals(ref_level):
+                raise ValueError(
+                    f"[{prefix}] {day.date()}: pressure levels {piece.level.values} "
+                    f"do not match reference {ref_level.values}"
+                )
+        pieces.append(piece)
+
+    # 5. Tail: continuous forecast beyond the last ERA5 day.
+    if ds_fc_cont is not None:
+        cont_times = pd.DatetimeIndex(pd.to_datetime(ds_fc_cont.time.values)).sort_values()
+        tail = cont_times[cont_times > (last_day + pd.Timedelta("23h"))]
+        if len(tail):
+            pieces.append(ds_fc_cont.sel(time=tail))
+            print(f"[{prefix}] forecast tail: {tail.min()} -> {tail.max()} ({len(tail)}h)")
+
+    if filled_days:
+        print(f"[{prefix}] gap-filled {len(filled_days)} day(s): {filled_days}")
+    if gap_days:
+        print(f"[{prefix}] WARNING: {len(gap_days)} day(s) with no source at all: {gap_days}")
+
+    # 6. Pieces are already sorted and non-overlapping: join="override" keeps the
+    # non-concat coords as-is so float noise in lat/lon cannot trigger an
+    # outer join (the failure mode that made this blow up in the first place).
+    ds_merged = xr.concat(
+        pieces, dim="time", join="override", combine_attrs="override"
+    )
+
+    # 7. Streamed write: dask computes one time-chunk at a time, single-threaded
     # to keep peak RAM predictable and avoid worker contention on small instances.
     delayed = ds_merged.to_netcdf(output_file, compute=False)
     delayed.compute(scheduler="single-threaded")
-    return ds_merged
+
+
+def validate_merged_file(output_file, prefix):
+    """Refuse to hand a corrupt merged file to the downscaling step.
+
+    The 2026-08-09 failure wrote a file that opened cleanly but held nothing:
+    every longitude NaN, every value NaN. run_latest only discovered that
+    2000 deleted point files later, deep inside a multiprocessing pool. These
+    checks are cheap and turn that into an immediate, legible failure.
+    """
+    with xr.open_dataset(output_file) as ds:
+        for coord in ("latitude", "longitude", "time"):
+            if coord not in ds.coords:
+                raise RuntimeError(f"[{prefix}] merged file has no '{coord}' coordinate")
+
+        for coord in ("latitude", "longitude"):
+            if bool(ds[coord].isnull().any()):
+                n = int(ds[coord].isnull().sum())
+                raise RuntimeError(
+                    f"[{prefix}] {n}/{ds[coord].size} {coord} values are NaN -- "
+                    f"{output_file} is a header-only shell, most likely a killed write"
+                )
+
+        times = pd.DatetimeIndex(pd.to_datetime(ds.time.values))
+        if times.size == 0:
+            raise RuntimeError(f"[{prefix}] merged file has no timesteps")
+        if times.has_duplicates:
+            dupes = times[times.duplicated()].unique()
+            raise RuntimeError(f"[{prefix}] duplicate timestamps: {list(dupes[:5])}")
+        if not times.is_monotonic_increasing:
+            raise RuntimeError(f"[{prefix}] timestamps are not monotonically increasing")
+
+        # A killed write leaves the data all-NaN even when the header looks sane.
+        for name in list(ds.data_vars)[:1]:
+            for label, idx in (("first", 0), ("last", -1)):
+                if bool(ds[name].isel(time=idx).isnull().all()):
+                    raise RuntimeError(
+                        f"[{prefix}] {name} is entirely NaN at the {label} timestep "
+                        f"({times[idx]}) -- merged file is not usable"
+                    )
+
+        gaps = pd.date_range(times.min(), times.max(), freq="h").difference(times)
+        if len(gaps):
+            print(f"[{prefix}] WARNING: {len(gaps)} missing hour(s), e.g. {list(gaps[:5])}")
+
+        print(
+            f"[{prefix}] validated {output_file}: {times.size} steps, "
+            f"{times.min()} -> {times.max()}"
+        )
 
 
 
@@ -675,10 +833,22 @@ def main():
         # Submit both functions to run in parallel
         future_surf = executor.submit(mp.get_era5_snowmapper, 'surf', lastday)
         future_plev = executor.submit(mp.get_era5_snowmapper, 'plev', lastday)
-            
-        # Wait for both functions to complete
-        concurrent.futures.wait([future_surf, future_plev])
-        
+
+        # .result() re-raises in this thread. concurrent.futures.wait() does not,
+        # which is how the 2026-08-03 PLEV download failed in total silence: SURF
+        # landed, PLEV did not, and the run carried on and archived away the
+        # forecast file that would have covered the gap.
+        errors = []
+        for name, future in (("surf", future_surf), ("plev", future_plev)):
+            try:
+                future.result()
+            except Exception as exc:
+                errors.append(f"{name}: {type(exc).__name__}: {exc}")
+        if errors:
+            raise RuntimeError(
+                "ERA5 download failed for %s: %s" % (date_str, "; ".join(errors))
+            )
+
         # Continue the rest of your script after both functions are done
         print("Both functions finished, continuing with the rest of the script.")
         downloadedPLEVfile = target = mp.config.climate.path  + "/forecast/PLEV_%04d%02d%02d.nc" % (lastday.year, lastday.month, lastday.day)
@@ -707,9 +877,18 @@ def main():
              os.remove(f)
 
     
-    # --- Example usage ---
-    merge_climate_files3(data_dir, "SURF", out_dir + "/SURF_final_merged_output.nc")
-    merge_climate_files3(data_dir, "PLEV", out_dir + "/PLEV_final_merged_output.nc")
+    # Merge, then prove the result is usable before run_latest ever sees it.
+    for prefix in ("SURF", "PLEV"):
+        merged = os.path.join(out_dir, f"{prefix}_final_merged_output.nc")
+        merge_climate_files3(data_dir, prefix, merged)
+        try:
+            validate_merged_file(merged, prefix)
+        except Exception:
+            # Leave nothing behind that a later step could mistake for good data.
+            if os.path.exists(merged):
+                os.remove(merged)
+                print(f"[{prefix}] removed unusable {merged}")
+            raise
 
 
 
