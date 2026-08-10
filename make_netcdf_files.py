@@ -45,8 +45,13 @@ def process_variable(var_name, unit, epsg, dem_res):
     if var_name == "gst":
         output_var_name = "GST"
 
+
+    #print("df")
     df = sim.agg_by_var_fsm(var=var_name)
-    grid_stack, lats, lons = sim.topo_map_sim(df, 1, "float32", dem_res)
+    #print(df)   
+    #grid_stack, lats, lons = sim.topo_map_sim(df, 1, "float32", dem_res)
+    grid_stack, lats, lons = sim.topo_map_sim_memsafe(df, 1, 'float32', dem_res)
+    #print("netcdf")    
     sim.write_ncdf(".", grid_stack, var_name, unit, epsg, dem_res, df.index.array, lats, lons, "float32", True, output_var_name)
 
 def main(mydir):

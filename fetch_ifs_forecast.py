@@ -152,7 +152,7 @@ client.retrieve(
      step=[i for i in range(150, 241, 6)],
      type="fc",
      param=["gh", "u", "v", "r", "q", "t"],
-     levelist=[1000, 925, 850, 700, 500, 300],
+     levelist=[1000, 925, 850, 700,600, 500, 400, 300],
      target="PLEV_fc2.grib2",
  )
 

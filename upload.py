@@ -1,4 +1,6 @@
 import logging
+import os
+import subprocess
 
 import boto3
 from botocore.exceptions import ClientError
@@ -43,6 +45,37 @@ def upload_snow_model_to_s3(
         aws_access_key_id=aws_access_key_id,
         aws_secret_access_key=aws_secret_access_key,
     )
+
+
+def compress_nc(input_file: str) -> str:
+    """Compress a NetCDF file to nc4 with zip_4 deflate.
+
+    Tries cdo first, falls back to nccopy.
+
+    :param input_file: Path to the input NetCDF file
+    :return: Path to the compressed file (caller must clean up)
+    """
+    dirname = os.path.dirname(input_file) or "."
+    basename = os.path.basename(input_file)
+    compressed_file = os.path.join(dirname, f".compressed_{basename}")
+    commands = [
+        ["cdo", "-f", "nc4", "-z", "zip_4", "copy", input_file, compressed_file],
+        ["nccopy", "-k", "nc4", "-d", "4", input_file, compressed_file],
+    ]
+    for cmd in commands:
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode == 0:
+                orig_size = os.path.getsize(input_file)
+                comp_size = os.path.getsize(compressed_file)
+                print(f"Compressed {basename}: {orig_size/1e6:.1f}MB -> {comp_size/1e6:.1f}MB ({comp_size/orig_size*100:.0f}%)")
+                return compressed_file
+        except FileNotFoundError:
+            continue
+    logging.getLogger().error(f"Compression failed for {basename} (no cdo or nccopy available)")
+    if os.path.exists(compressed_file):
+        os.remove(compressed_file)
+    return input_file
 
 
 def upload_file(

@@ -109,7 +109,8 @@ for time_idx, time_value in enumerate(ds1.Time.values):
     with rasterio.open(output_filename_tif, 'w', driver='GTiff',
                                width=mosaic.shape[2], height=mosaic.shape[1],
                                count=mosaic.shape[0], dtype=mosaic.dtype,
-                               crs=src_files_to_mosaic[0].crs, transform=out_trans) as dest:
+                               crs=src_files_to_mosaic[0].crs, transform=out_trans,
+                               compress='deflate', predictor=2) as dest:
         dest.write(mosaic)
 
 
@@ -223,7 +224,8 @@ for time_idx, time_value in enumerate(ds1.Time.values):
     with rasterio.open(output_filename_tif, 'w', driver='GTiff',
                        width=mosaic.shape[2], height=mosaic.shape[1],
                        count=mosaic.shape[0], dtype=mosaic.dtype,
-                       crs=src_files_to_mosaic[0].crs, transform=out_trans) as dest:
+                       crs=src_files_to_mosaic[0].crs, transform=out_trans,
+                       compress='deflate', predictor=2) as dest:
         dest.write(mosaic)
 
     from netCDF4 import Dataset, default_fillvals
@@ -346,7 +348,8 @@ for time_idx, time_value in enumerate(ds1.Time.values):
     with rasterio.open(output_filename_tif, 'w', driver='GTiff',
                        width=mosaic.shape[2], height=mosaic.shape[1],
                        count=mosaic.shape[0], dtype=mosaic.dtype,
-                       crs=src_files_to_mosaic[0].crs, transform=out_trans) as dest:
+                       crs=src_files_to_mosaic[0].crs, transform=out_trans,
+                       compress='deflate', predictor=2) as dest:
         dest.write(mosaic)
 
     from netCDF4 import Dataset, default_fillvals
