@@ -31,6 +31,33 @@ fileyear = year+1
 
 print("Water year: " + str(fileyear))
 
+# Dates this recent are always re-rendered instead of being served from the TIF
+# cache. A date first enters the season file about 9 days BEFORE it occurs,
+# while it is still an IFS forecast day, and ERA5 does not land for it until
+# roughly 6 days AFTER it. Skipping purely on "the TIF exists" therefore froze
+# every field at its +9 day forecast value and never refreshed it once the
+# reanalysis arrived -- so the daily reanalysis upload was shipping a forecast.
+#
+# 10 days back covers the ~6 day ERA5 lag with margin, and deliberately matches
+# cleanup_old_spatial_nc(keep_days=10) in upload_to_AWS.py: re-rendering a date
+# older than that would write an NC the same run then deletes. Forward dates are
+# unbounded by this constant -- they have negative age, so the whole forecast
+# horizon re-renders and picks up each new IFS cycle.
+REFRESH_DAYS = 10
+
+
+def cache_is_stale(formatted_date):
+    """True if this date's forcing may have improved since the TIF was written.
+
+    Covers both directions: future dates (negative age) are still forecasts and
+    get a better IFS cycle every run, and recent past dates are still inside the
+    ERA5 lag window. Older dates are settled and keep using the cache, which is
+    what stops this from re-rendering the whole season every night.
+    """
+    age_days = (datetime.now().date()
+                - datetime.strptime(formatted_date, "%Y%m%d").date()).days
+    return age_days <= REFRESH_DAYS
+
 # Define the target projection as longitude and latitude
 
 # Define the target projection as longitude and latitude
@@ -71,7 +98,7 @@ for time_idx, time_value in enumerate(ds1.Time.values):
     output_filename_nc = spatial_directory+f'SWE_{formatted_date}.nc'
     output_filename_tif = spatial_directory+f'swe_merged_reprojected_{year}_{time_idx}.tif'
     
-    if os.path.exists(output_filename_tif):
+    if os.path.exists(output_filename_tif) and not cache_is_stale(formatted_date):
         print(f"File {output_filename_tif} already exists. Skipping.")
         continue
 
@@ -101,7 +128,7 @@ for time_idx, time_value in enumerate(ds1.Time.values):
     # Merge the raster datasets
     mosaic, out_trans = merge(src_files_to_mosaic, resampling=Resampling.cubic)
 
-    if os.path.exists(output_filename_tif):
+    if os.path.exists(output_filename_tif) and not cache_is_stale(formatted_date):
         print(f"File {output_filename_tif} already exists. Skipping.")
         continue
 
@@ -185,7 +212,7 @@ for time_idx, time_value in enumerate(ds1.Time.values):
     output_filename_nc = spatial_directory+f'HS_{formatted_date}.nc'
     output_filename_tif = spatial_directory+f'hs_merged_reprojected_{year}_{time_idx}.tif'
     
-    if os.path.exists(output_filename_tif):
+    if os.path.exists(output_filename_tif) and not cache_is_stale(formatted_date):
         print(f"File {output_filename_tif} already exists. Skipping.")
         continue
 
@@ -216,7 +243,7 @@ for time_idx, time_value in enumerate(ds1.Time.values):
     # Merge the raster datasets
     mosaic, out_trans = merge(src_files_to_mosaic, resampling=Resampling.cubic)
 
-    if os.path.exists(output_filename_tif):
+    if os.path.exists(output_filename_tif) and not cache_is_stale(formatted_date):
         print(f"File {output_filename_tif} already exists. Skipping.")
         continue
 
@@ -309,7 +336,7 @@ for time_idx, time_value in enumerate(ds1.Time.values):
     output_filename_nc = spatial_directory+f'ROF_{formatted_date}.nc'
     output_filename_tif = spatial_directory+f'ROF_merged_reprojected_{year}_{time_idx}.tif'
     
-    if os.path.exists(output_filename_tif):
+    if os.path.exists(output_filename_tif) and not cache_is_stale(formatted_date):
         print(f"File {output_filename_tif} already exists. Skipping.")
         continue
 
@@ -340,7 +367,7 @@ for time_idx, time_value in enumerate(ds1.Time.values):
     # Merge the raster datasets
     mosaic, out_trans = merge(src_files_to_mosaic, resampling=Resampling.cubic)
 
-    if os.path.exists(output_filename_tif):
+    if os.path.exists(output_filename_tif) and not cache_is_stale(formatted_date):
         print(f"File {output_filename_tif} already exists. Skipping.")
         continue
 
