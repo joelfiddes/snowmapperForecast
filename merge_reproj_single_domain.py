@@ -10,6 +10,7 @@ import numpy as np
 import sys
 import upload as s3
 import glob
+import boto3
 
 mydir = sys.argv[1]
 mydomain = sys.argv[2]
@@ -19,8 +20,14 @@ print("upload_to_aws =" + upload_to_aws)
 SNOW_MODEL = "joel-snow-model"
 SNOW_MODEL_BUCKET = "snow-model-data-source"
 PARAMETERS = ["HS", "SWE"]
-aws_access_key_id = "AKIAROB2RVVCHEK5X3R2"
-aws_secret_access_key ="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"
+# Credentials come from the AWS secrets file (~/.aws/credentials) via the
+# default profile, matching upload_to_AWS.py and the offline uploaders. They
+# used to be hardcoded here, which both leaked them into a public repo and left
+# this script holding a key that stayed dead after rotation while the rest of
+# the pipeline carried on working.
+credentials = boto3.Session().get_credentials().get_frozen_credentials()
+aws_access_key_id = credentials.access_key
+aws_secret_access_key = credentials.secret_key
 
 #year= sys.argv[1]
 startTime = datetime.now()
