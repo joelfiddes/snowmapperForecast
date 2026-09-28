@@ -26,11 +26,33 @@ os.makedirs("./tables", exist_ok=True)
 
 
 def extract_mean_values(merged_raster, polygons):
+    """Area mean of the raster inside each polygon.
+
+    `crop=True` crops to the polygon's BOUNDING BOX, so much of what comes back
+    lies outside the polygon itself. `filled=False` keeps those cells masked.
+    Under the default `filled=True`, rasterio fills them with the raster's
+    nodata value -- and these rasters declare `nodata: None`, so it falls back
+    to **0**, which `np.nanmean` then averages in as real data.
+
+    Every basin mean was therefore diluted by roughly bbox-area/polygon-area.
+    Measured across 292 basins: median **1.965x** too low, mean 2.054x, up to
+    3.95x (basin CODE 17165 read 310.77 mm against a true polygon mean of
+    601.60 mm). Fixed at the 2026/27 season rollover, where the table series
+    restarts from zero so the correction introduces no mid-season step change.
+
+    `masked_invalid` additionally drops NaN cells *inside* the polygon, which
+    the old `nanmean` handled and which must keep working. Note we do NOT treat
+    zeros as missing -- genuine in-polygon zeros are real data (601.60 true vs
+    604.27 if zeros were discarded).
+    """
     mean_values = []
     dates = []
     for idx, geom in enumerate(polygons.geometry):
-        masked, _ = mask(merged_raster, [geom], crop=True)
-        mean_value = np.nanmean(masked)
+        masked, _ = mask(merged_raster, [geom], crop=True, filled=False)
+        data = np.ma.masked_invalid(masked)
+        # count() is the number of UNMASKED cells; 0 means the polygon covers
+        # no valid data, where .mean() would return the np.ma.masked singleton
+        mean_value = np.nan if data.count() == 0 else float(data.mean())
         mean_values.append(mean_value)
         date = "YYYY-MM-DD"
         dates.append(date)
