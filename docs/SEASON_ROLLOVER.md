@@ -121,6 +121,31 @@ exits 0**. Verified 2026-09-28: each config has exactly one `start:` line, and a
 substitution the file still parses with `project.start = datetime.date(2026, 9, 1)` as a `date`
 object — which matters, because `update_config_paths()` calls `.replace(year=…)` on it.
 
+### 4b. Deploy the zonal-stats fix
+
+Must land **before** any table is generated, so the new season is correct from its first row.
+See "Decide before step 5" below for what it fixes and why here.
+
+Branch `docs/season-rollover`, commit `088b602`. Single-file checkout, so the box's other
+uncommitted local edits are left alone:
+
+```bash
+cd /home/ubuntu/src/snowmapperForecast
+cp results_table_all.py ~/season_archive/WY2025-26/results_table_all.py.pre-fix   # rollback copy
+git fetch origin docs/season-rollover
+git checkout origin/docs/season-rollover -- results_table_all.py
+
+git status --short results_table_all.py                 # expect: M (staged)
+python -c "import ast; ast.parse(open('results_table_all.py').read())" && echo "parses OK"
+grep -n "filled=False" results_table_all.py             # expect one hit in extract_mean_values
+```
+
+Confirm nothing else moved:
+
+```bash
+git status --short | grep -v results_table_all.py       # other local edits untouched
+```
+
 ### 5. Seed the new season
 
 ```bash
@@ -202,9 +227,25 @@ mean_value = np.nanmean(masked)
 Do **not** "convert zeros to NaN" — that also discards genuine in-polygon zeros (601.60 true vs
 604.27 with zeros dropped).
 
-If you take the fix, do it before step 5 so the new season is correct from its first row, and note
-that 2026/27 values will sit ~2× above the 2025/26 series in the viewer's history. If you decline,
-the new season stays consistent with previous years and stays ~2× low.
+**DECIDED 2026-09-28 (Joel): fold the fix into the rollover.** Implemented and pushed as commit
+`088b602` on branch `docs/season-rollover`; deploy it at step 4b.
+
+Verified against a real raster (`swe_merged_reprojected_2026_278.tif`) and the real 295 basins:
+
+```
+raster nodata declared as: None          <- the root cause, confirmed directly
+ratio new/old   median 1.950  mean 2.053  p10 1.63  p90 2.59  max 3.95
+domain mean     old 22.75 -> new 43.96 mm
+new >= old for every basin: True         <- dilution only ever understated
+NaN introduced by the fix: 0             <- in-polygon NaN handling preserved
+```
+
+That reproduces an earlier, independent measurement over 292 basins on a different date
+(median 1.965, mean 2.054, p10 1.63, max 3.95).
+
+**Consequence to communicate**: 2026/27 basin values in the viewer will sit ~2x above the 2025/26
+history. That is the old series being wrong, not the new one — but to anyone reading the viewer it
+looks like a step change, so it is worth saying so before the season gets going.
 
 ## Optional: reclaim the runtime creep
 
