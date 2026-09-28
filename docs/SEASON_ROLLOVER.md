@@ -69,54 +69,57 @@ crontab -l | sed 's|^50 15 .*run_2000.sh|#&|' | crontab -
 crontab -l | grep run_2000            # confirm it is commented
 ```
 
-### 2. Archive the completed season — before anything is overwritten
+### 2+4. Set the old season aside by RENAMING, not deleting
+
+Measured 2026-09-28: `spatial/*.tif` is **20 G**, `sim_latest/outputs` 6.3 G,
+`sim_archive/outputs` 2.8 G, `fsm_sims` 71 M, `tables` 24 M — against 142 G free.
+
+Renaming is instant, costs no disk copy, and makes rollback a second `mv` instead of an untar.
+Tar only the two small, scientifically valuable sets as belt-and-braces. Delete the renamed
+directories only once the new season is verified at step 6.
 
 ```bash
 cd /home/ubuntu/sim/snowmapper_2026
-ARCH=~/season_archive/WY2025-26
-mkdir -p $ARCH
+OLD=WY2025-26
+mkdir -p ~/season_archive/$OLD
 
-cp -a tables            $ARCH/
-cp -a D2000/config.yml  $ARCH/D2000_config.yml
-cp -a master/config.yml $ARCH/master_config.yml
-tar czf $ARCH/spatial_tif.tar.gz  spatial/*.tif
-tar czf $ARCH/fsm_sims.tar.gz     D2000/fsm_sims/
+# small + valuable: copy properly
+cp -a tables            ~/season_archive/$OLD/
+cp -a D2000/fsm_sims    ~/season_archive/$OLD/
+cp -a D2000/config.yml  ~/season_archive/$OLD/D2000_config.yml
+cp -a master/config.yml ~/season_archive/$OLD/master_config.yml
 
-du -sh $ARCH                       # sanity: non-trivial size
-df -h /                            # 142 G free as of 2026-09-28
+# bulk: rename in place, no copy
+mkdir -p spatial_$OLD && mv spatial/*.tif spatial_$OLD/
+mv D2000/fsm_sims            D2000/fsm_sims.$OLD            && mkdir D2000/fsm_sims
+mv D2000/sim_archive/outputs D2000/sim_archive/outputs.$OLD && mkdir D2000/sim_archive/outputs
+mv D2000/sim_latest/outputs  D2000/sim_latest/outputs.$OLD  && mkdir D2000/sim_latest/outputs
+
+ls spatial/*.tif 2>/dev/null | wc -l   # expect 0
+ls D2000/fsm_sims/ | wc -l             # expect 0
+df -h /
 ```
 
-The season's gridded product is already on S3 under `joel-snow-model/` and is unaffected by the
-rollover, so it needs no separate archiving.
+Leave `spatial/*.nc` alone — those are the daily gridded files on a 10-day rotation, cleaned by
+`upload_to_AWS.py`. The season's gridded product is already on S3 under `joel-snow-model/` and is
+unaffected by the rollover.
 
 ### 3. Point both configs at the new season
 
 ```bash
 cd /home/ubuntu/sim/snowmapper_2026
-sed -i 's|^\( *start: *\).*|\g<1>2026-09-01|' D2000/config.yml master/config.yml
-grep -nE '^\s*(start|end):' D2000/config.yml master/config.yml
+sed -i -E 's|^([[:space:]]*)start:.*|\1start: 2026-09-01|' D2000/config.yml master/config.yml
+grep -nE '^[[:space:]]*(start|end):' D2000/config.yml master/config.yml
 ```
 
-Expect `start: 2026-09-01` in both. `end:` is overwritten at runtime by
+Expect `    start: 2026-09-01` in both, indentation intact. `end:` is overwritten at runtime by
 `update_config_paths()`, so its stale 2025-12-31 value does not matter — leave it.
 
-### 4. Clear the season-scoped outputs
-
-Everything here is indexed against the old season and must not survive into the new one. The
-`_2026_` rasters are the mis-labelled ones written since 1 Sept and go too.
-
-```bash
-cd /home/ubuntu/sim/snowmapper_2026
-rm -f  spatial/*.tif                      # both _2025_ and _2026_ (archived in step 2)
-rm -f  tables/*.txt tables/*.csv
-rm -rf D2000/sim_archive/outputs/*  D2000/sim_latest/outputs/*  D2000/fsm_sims/*
-
-ls spatial/*.tif 2>/dev/null | wc -l      # expect 0
-ls D2000/fsm_sims/ | wc -l                # expect 0
-```
-
-Leave `spatial/*.nc` alone — those are the daily gridded files on a 10-day rotation, cleaned by
-`upload_to_AWS.py`.
+**Do not use `\g<1>`** — that is Python regex syntax, not sed. Dry-run on the live configs showed
+sed treats it as literal text and writes `g<1>2026-09-01`, destroying the `start:` key, **and still
+exits 0**. Verified 2026-09-28: each config has exactly one `start:` line, and after the corrected
+substitution the file still parses with `project.start = datetime.date(2026, 9, 1)` as a `date`
+object — which matters, because `update_config_paths()` calls `.replace(year=…)` on it.
 
 ### 5. Seed the new season
 
@@ -164,6 +167,44 @@ crontab -l | grep run_2000
 Then watch the next scheduled run end-to-end for a clean `run complete` and a sane `Total runtime`.
 
 ---
+
+## Decide before step 5: fix the zonal-stats dilution at the same time?
+
+**The MCASS legacy viewer is live and expected to run through 2026/27, so the tables have to be
+right.** They currently are not, in two independent ways:
+
+1. **Dates** — the +1-year shift this rollover fixes.
+2. **Values** — `results_table_all.py::extract_mean_values` does
+   `mask(raster, [geom], crop=True)` then `np.nanmean(...)`. The rasters have `nodata: None`, so
+   rasterio fills cells outside the polygon but inside its bounding box with **0**, and `nanmean`
+   averages them in as real data. Every basin mean is diluted by roughly bbox/polygon area.
+   Measured over 292 basins: **median 1.965×, mean 2.054× (p10 1.63, p90 2.54, up to 3.95×) too
+   low.** Cell-level check on CODE 17165: `nanmean` gave 310.77 mm against a true polygon mean of
+   601.60 mm.
+
+The gridded S3 product is **not** affected — it is the raw raster. This is a tables-only defect,
+and therefore a viewer-only defect.
+
+**The rollover is the right moment to fix it.** The series restarts from zero here, so correcting
+it now introduces no visible step change. Fix it mid-season instead and every basin's published
+value roughly doubles overnight, which reads as the model breaking.
+
+One-line fix, pick one:
+
+```python
+masked, _ = mask(merged_raster, [geom], crop=True, filled=False)
+mean_value = masked.mean()          # masked array: excludes outside-polygon cells
+# or
+masked, _ = mask(merged_raster, [geom], crop=True, nodata=np.nan)
+mean_value = np.nanmean(masked)
+```
+
+Do **not** "convert zeros to NaN" — that also discards genuine in-polygon zeros (601.60 true vs
+604.27 with zeros dropped).
+
+If you take the fix, do it before step 5 so the new season is correct from its first row, and note
+that 2026/27 values will sit ~2× above the 2025/26 series in the viewer's history. If you decline,
+the new season stays consistent with previous years and stays ~2× low.
 
 ## Optional: reclaim the runtime creep
 
