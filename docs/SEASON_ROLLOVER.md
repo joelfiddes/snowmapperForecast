@@ -121,30 +121,10 @@ exits 0**. Verified 2026-09-28: each config has exactly one `start:` line, and a
 substitution the file still parses with `project.start = datetime.date(2026, 9, 1)` as a `date`
 object — which matters, because `update_config_paths()` calls `.replace(year=…)` on it.
 
-### 4b. Deploy the zonal-stats fix
+### 4b. Do NOT deploy the zonal-stats fix
 
-Must land **before** any table is generated, so the new season is correct from its first row.
-See "Decide before step 5" below for what it fixes and why here.
-
-Branch `docs/season-rollover`, commit `088b602`. Single-file checkout, so the box's other
-uncommitted local edits are left alone:
-
-```bash
-cd /home/ubuntu/src/snowmapperForecast
-cp results_table_all.py ~/season_archive/WY2025-26/results_table_all.py.pre-fix   # rollback copy
-git fetch origin docs/season-rollover
-git checkout origin/docs/season-rollover -- results_table_all.py
-
-git status --short results_table_all.py                 # expect: M (staged)
-python -c "import ast; ast.parse(open('results_table_all.py').read())" && echo "parses OK"
-grep -n "filled=False" results_table_all.py             # expect one hit in extract_mean_values
-```
-
-Confirm nothing else moved:
-
-```bash
-git status --short | grep -v results_table_all.py       # other local edits untouched
-```
+**Deliberately skipped** — see "The zonal-stats dilution: deliberately left alone" below.
+`results_table_all.py` on the box stays as it is. Nothing to do at this step.
 
 ### 5. Seed the new season
 
@@ -192,6 +172,41 @@ crontab -l | grep run_2000
 Then watch the next scheduled run end-to-end for a clean `run complete` and a sane `Total runtime`.
 
 ---
+
+## The zonal-stats dilution: deliberately left alone
+
+**DECISION (Joel, 2026-09-28): stay consistently wrong. This is the legacy code's last season.**
+
+The fix exists — commit `088b602` on branch `docs/season-rollover`, implemented and verified — but
+it is **not** deployed, and step 4b is a no-op. Reasoning below; it is sound, not a shortcut.
+
+### Why staying wrong is safe here
+
+The error is a **fixed per-basin multiplicative constant**: exactly
+counted-bbox-cells / polygon-cells, verified across 255 basins with
+max |observed − predicted| = 0.0 and correlation 1.000000. It does not vary with the data, the
+variable, or the day.
+
+Critically, `zonal_stats.py` builds the Q5/Q50/Q95 climatology bands from the **same**
+`swe_mean_values_table.csv` as the current series, so both carry the same constant and it **cancels**.
+The viewer's actual job — where this year sits against normal — is therefore exactly right today.
+Anomalies, percentiles, year-on-year comparison, trends and peak timing are all unaffected. Only the
+absolute mm axis is wrong.
+
+Correcting it now would put a ~2x step between the 2025/26 and 2026/27 series in a product that is
+being retired, and then TPS2 would introduce a second change at cutover. **One discontinuity at a
+deliberate system change beats two.** TPS2 does not share the bug — `catchments.py` uses
+`geometry_mask(..., invert=True)` and nothing in `topopyscale2/` uses `crop=True` — so it is already
+correct by construction and the cutover is where the step naturally belongs.
+
+### When this stops being safe
+
+If anyone reads **absolute mm** off the viewer rather than relative position. If that comes up, the
+whole record is exactly correctable after the fact without re-running anything: multiply each basin
+by its own constant, computable at any time from the basin geometry against the raster grid.
+
+<details>
+<summary>Original analysis (kept for the record)</summary>
 
 ## Decide before step 5: fix the zonal-stats dilution at the same time?
 
@@ -246,6 +261,10 @@ That reproduces an earlier, independent measurement over 292 basins on a differe
 **Consequence to communicate**: 2026/27 basin values in the viewer will sit ~2x above the 2025/26
 history. That is the old series being wrong, not the new one — but to anyone reading the viewer it
 looks like a step change, so it is worth saying so before the season gets going.
+
+*(Superseded 2026-09-28 — this consequence is exactly why the fix was not taken. See above.)*
+
+</details>
 
 ## Optional: reclaim the runtime creep
 
