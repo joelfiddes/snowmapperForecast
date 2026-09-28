@@ -34,11 +34,21 @@ def extract_mean_values(merged_raster, polygons):
     nodata value -- and these rasters declare `nodata: None`, so it falls back
     to **0**, which `np.nanmean` then averages in as real data.
 
-    Every basin mean was therefore diluted by roughly bbox-area/polygon-area.
-    Measured across 292 basins: median **1.965x** too low, mean 2.054x, up to
-    3.95x (basin CODE 17165 read 310.77 mm against a true polygon mean of
-    601.60 mm). Fixed at the 2026/27 season rollover, where the table series
-    restarts from zero so the correction introduces no mid-season step change.
+    This is not an averaging bug -- nanmean correctly averaged the cells it was
+    given. The dilution factor is EXACTLY counted-bbox-cells / polygon-cells,
+    verified across 255 basins with max |observed - predicted| = 0.0 and
+    correlation 1.000000. Pure geometry: always >= 1 (a polygon cannot exceed
+    its own bounding box), median 1.95 (a typical basin fills about half its
+    bbox), up to 3.95 for long diagonal basins.
+
+    Two things follow. The factor is a fixed per-basin constant, identical for
+    every variable and every day, so historical tables are exactly correctable
+    without re-running anything. And it scaled magnitude only -- shape and
+    timing were never affected, which is why validation saw per-basin r ~0.95
+    and peak timing within days while magnitudes disagreed ~2x.
+
+    Fixed at the 2026/27 season rollover, where the table series restarts from
+    zero so the correction introduces no mid-season step change.
 
     `masked_invalid` additionally drops NaN cells *inside* the polygon, which
     the old `nanmean` handled and which must keep working. Note we do NOT treat
