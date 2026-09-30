@@ -1,6 +1,14 @@
 # Annual season rollover — legacy CA snowmapper (aws 13.50.55.27)
 
-DRAFT 2026-09-28. **Nothing here has been run.** Review before executing.
+**EXECUTED 2026-09-30. This was the FINAL rollover for this code** — Joel confirmed the legacy
+system retires after WY2026-27, with TPS2 taking over the datagateway feed. Kept as the operating
+record for the remaining season and for the cutover, not as a procedure anyone runs again.
+
+Outcome: season reseeded 2026-09-01, 36 days to 2026-10-06; 108 rasters all tagged 2026; 300 basin
+tables 2026-09-01 → 2026-10-06 with **zero** rows dated 2027 (they had run to 2027-10-06);
+`*_previous.txt` rebuilt to 2025-26 (was 2024-25); S3 and the MCASS viewer both republished; cron
+re-enabled. Timings: `run_master3` 7m/1.35 GB, `run_first` 3h17m/3.39 GB, the rest 25m/1.62 GB —
+all of it comfortably inside 2 GB except `run_first`.
 
 This procedure existed only as two lines in CLAUDE.md, which is a large part of why the
 2026 rollover slipped four weeks and started mis-dating the basin tables.
@@ -148,19 +156,69 @@ wc -l < D2000/fsm_sims/sim_FSM_pt_0000.txt        # expect ~ days since 1 Sept (
 Then run the rest of the chain by hand and check the dates it produces:
 
 ```bash
-python /home/ubuntu/src/snowmapperForecast/concat_fsm.py ./D2000
+python /home/ubuntu/src/snowmapperForecast/concat_fsm.py ./D2000      # ALSO RUNS FSM
 python /home/ubuntu/src/snowmapperForecast/make_netcdf_files.py ./D2000
 python /home/ubuntu/src/snowmapperForecast/merge_reproj_single_domain.py "./" "D2000" False
-python /home/ubuntu/src/snowmapperForecast/results_table_all.py
+python /home/ubuntu/src/snowmapperForecast/results_table_all.py       # writes only the CSVs
+python /home/ubuntu/src/snowmapperForecast/zonal_stats.py             # writes the *_current.txt
 
 ls spatial/*.tif | sed -E 's/.*_reprojected_([0-9]{4})_.*/\1/' | sort -u   # expect 2026 ONLY
 sed -n '2p' tables/ISSYKUL_current.txt | cut -f1                           # expect 2026-09-01
 tail -1     tables/ISSYKUL_current.txt | cut -f1                           # expect ~today, NOT 2027
 ```
 
+**Two traps, both hit on 2026-09-30:**
+
+- **`zonal_stats.py` is not optional.** `results_table_all.py` writes only the intermediate
+  `tables/*.csv`; the `*_current.txt` files the viewer reads come from `zonal_stats.py`. Omitting it
+  gives `Exit status: 0` and **zero tables** — success by exit code, nothing produced.
+- **`concat_fsm` is what executes FSM** (`concat_fsm.py:217 simulate_fsm` →
+  `sim.fsm_sim(..., "./FSM")`). `run_first` only writes the FSM *driving* files. So `D2000/fsm_sims`
+  is empty until this step runs, and gating on it beforehand deadlocks. Gate on
+  `D2000/sim_archive/outputs/FSM_pt_*.txt == 2000` instead.
+
 **The last two checks are the whole point.** First row 2026-09-01 and last row near today means the
 index origin and the label agree again. If the last row is a year out, stop — the sim start and the
 label have desynchronised and re-enabling the cron will keep publishing bad dates.
+
+### 6b. Rebuild `*_previous.txt` — a manual step with no producer in the repo
+
+The MCASS viewer reads **three** files per basin, and only one of them is produced by the pipeline:
+
+| file | count | produced by |
+|---|---|---|
+| `*_current.txt` | 300 | `zonal_stats.py`, daily |
+| `*_previous.txt` | 300 | **nothing — written by hand at rollover** |
+| `*_climate.txt` | 301 | **nothing — last written 2024-10-23** |
+
+Nothing in this repo greps for `_previous` or `_climate`. Before 2026-09-30 the "previous" line had
+sat untouched since 2025-10-02, so it still held **2024-25** while current showed 2026-27 — the
+viewer was comparing against a season two years old. Miss this and the rollover looks complete but
+the comparison is silently wrong.
+
+Rebuild it from the archived season, taking the full water year Sept 1 → Aug 31:
+
+```python
+# on the box, from ~/season_archive/WY2025-26/tables/*_current.txt
+sel = d[(d.date >= "2025-09-01") & (d.date <= "2026-08-31")]   # 365 rows, one per day
+# assert continuity per basin; skip (do not write) any that is irregular
+```
+
+Why a plain extract works despite the archived tables being corrupt: `results_table_all` is
+incremental and tracks by **file count**, so rows written before the label flipped kept their correct
+dates and only later rows got the +365 shift. The jump is visible at one point
+(`2026-09-09 → 2027-09-10`), and the water year we need lies entirely before it.
+
+Back up on the viewer host before pushing:
+
+```bash
+ssh -i ~/.ssh/swe_dashboard ec2-user@13.49.227.116 \
+  'mkdir -p ~/MCASS/data_backup_previous_$(date +%Y%m%d) && cp -p ~/MCASS/data/*_previous.txt $_'
+scp -i ~/.ssh/swe_dashboard *_previous.txt ec2-user@13.49.227.116:/home/ec2-user/MCASS/data/
+```
+
+`*_climate.txt` was left untouched — different column order, no `FC`, and two years stale. Whether it
+is meant to be a static baseline or an annually-refreshed one was never resolved.
 
 ### 7. Re-enable the cron
 
