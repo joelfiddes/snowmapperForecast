@@ -133,6 +133,57 @@ def perform_simulation(mp):
     mp.downscale_climate()
     mp.to_fsm()
 
+def clamp_start_past_gaps(first_timestamp, last_timestamp,
+                          plev_file='../master/inputs/climate/PLEV_final_merged_output.nc'):
+    """Move the window start forward past any hole in the merged climate.
+
+    downscale_climate() does a strict `.sel(time=date_range(start, end))` on the
+    PLEV file (topo_scale.py:448), so a SINGLE missing hour inside the window
+    kills the whole run with
+        KeyError: "not all values found in index 'time'"
+
+    That happened on 2026-09-30: the cron was disabled 09-28 11:50 -> 09-30 08:50
+    for the season rollover, so no IFS forecast was captured for the 09-28 or
+    09-29 initialisations, and ERA5 (~6 days behind) had not reached them. The
+    merged files carried a real 48-hour hole, every nightly run failed, the sim
+    never extended, and the downstream calculator raised "expected 10 days
+    forecast, got 7". Left alone it would have kept failing until the rolling
+    7-day window moved past the hole, about a week later.
+
+    A hole is a genuine data outage, not something to interpolate over, so we
+    shorten the refresh window rather than invent values -- and say so loudly.
+    Anything before the hole simply keeps the values it already has.
+    """
+    import pandas as pd
+    import xarray as xr
+
+    try:
+        with xr.open_dataset(plev_file) as ds:
+            have = pd.DatetimeIndex(pd.to_datetime(ds.time.values))
+    except Exception as exc:
+        print(f"WARNING: could not inspect {plev_file} for gaps ({exc}); "
+              f"leaving the window unchanged")
+        return first_timestamp
+
+    want = pd.date_range(pd.Timestamp(first_timestamp).floor('H'),
+                         pd.Timestamp(last_timestamp), freq='H')
+    missing = want.difference(have)
+    if not len(missing):
+        return first_timestamp
+
+    new_start = (missing.max() + pd.Timedelta(hours=1)).to_pydatetime()
+    print(f"WARNING: {len(missing)} hour(s) missing from the merged climate "
+          f"between {missing.min()} and {missing.max()}")
+    print(f"         shortening the refresh window: {first_timestamp} -> {new_start}")
+    if new_start >= pd.Timestamp(last_timestamp).to_pydatetime():
+        raise SystemExit(
+            "ABORT: the data gap reaches the end of the window "
+            f"({missing.max()} >= {last_timestamp}); nothing left to downscale. "
+            "Wait for ERA5 to backfill, or re-fetch the missing forecast "
+            "initialisations with IFS_FETCH_DATE.")
+    return new_start
+
+
 def main(mydir):
     os.chdir(mydir)
     start_time = datetime.now()
@@ -147,6 +198,8 @@ def main(mydir):
     # Get the last timestamp of last forecast day
     nc_file = f'../master/inputs/climate/SURF_final_merged_output.nc'
     last_timestamp = get_last_fullday_timestamp(nc_file)
+
+    first_timestamp = clamp_start_past_gaps(first_timestamp, last_timestamp)
 
     print(f"First timestamp: {first_timestamp}")
     print(f"Last fullday timestamp: {last_timestamp}")

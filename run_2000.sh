@@ -2,13 +2,15 @@
 # Daily SnowMapper pipeline for domain D2000.
 #
 # Tracked in git so it deploys like everything else. The path the cron invokes,
-# /home/ubuntu/sim/snowmapper_2026/run_2000.sh, is a symlink to this file:
-#   50 15 * * * conda activate downscaling; ./sim/snowmapper_2026/run_2000.sh > ./sim/snowmapper_2026/run.log 2>&1
+# /home/ubuntu/sim/snowmapper_2027/run_2000.sh, is a symlink to this file:
+#   50 15 * * * conda activate downscaling; ./sim/snowmapper_2027/run_2000.sh > ./sim/snowmapper_2027/run.log 2>&1
 # Note the single '>': run.log holds the most recent run only.
 
 conda activate downscaling
 
-WDIR=/home/ubuntu/sim/snowmapper_2026
+# Season directory, named for the water-year END year (WY2026-27 -> _2027).
+# Overridable so the path is in one place when the season turns.
+WDIR="${WDIR:-/home/ubuntu/sim/snowmapper_2027}"
 SRC=/home/ubuntu/src/snowmapperForecast
 MAIL=$SRC/aws_mail.py
 cd $WDIR
