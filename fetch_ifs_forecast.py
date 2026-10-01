@@ -46,7 +46,25 @@ fctime = 0
 
 # removed implementation as the day is handle automatically based on last available fctime
 # can be used to specify precise forecasts up to three day ago
-mydate= 0 #  0 = today (default) -1 = yesterday -2 = day before yesterdaz -3 = day before that. Valid values 0-3.
+#
+# 0 = today (default), -1 = yesterday, -2/-3 = further back. Valid 0 to -3.
+# Overridable so a MISSED fetch can be backfilled without editing this file.
+#
+# Needed 2026-10-01: the cron was disabled 09-28 11:50 -> 09-30 08:50 for the
+# season rollover, so no IFS forecast was captured for the 09-28 or 09-29
+# initialisations. ERA5 runs ~6 days behind and had not reached them either, so
+# both merged climate files ended up with a genuine 48-hour hole
+# (2026-09-28 00:00 -> 2026-09-29 23:00). run_latest then failed with
+# KeyError "not all values found in index 'time'", because its continuous
+# 7-day window spans the hole -- which left the forecast only 6 days long and
+# tripped the downstream "expected 10 days" alarm.
+#
+#   IFS_FETCH_DATE=-3 python fetch_ifs_forecast.py   # backfill 09-28
+#   IFS_FETCH_DATE=-2 python fetch_ifs_forecast.py   # backfill 09-29
+mydate = int(os.environ.get("IFS_FETCH_DATE", 0))
+if mydate > 0 or mydate < -3:
+    raise SystemExit("IFS_FETCH_DATE must be 0 to -3, got %d" % mydate)
+print("IFS forecast initialisation offset: %d day(s)" % mydate)
 
 
 #outdir = './inputs/forecast/'
