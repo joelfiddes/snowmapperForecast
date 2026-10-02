@@ -145,8 +145,17 @@ def main(a):
         if n != a.days:
             raise SystemExit("ABORT: built %d steps, expected %d" % (n, a.days))
 
+        key = "%s/forecast/%s/%d/%s/%s_%s.nc" % (
+            ROOT, param, run_date.year, run_date.strftime("%Y%m"), param, a.date)
+
+        # Compress BEFORE gating: compress_nc (cdo) adds `missing_value`, which
+        # every published object carries and the freshly-built file does not.
+        # Comparing the pre-compression file against a published reference
+        # reports a mismatch that does not exist in the artifact we upload.
+        comp = s3mod.compress_nc(out)
+
         if ref_local:
-            problems = check_against_reference(out, ref_local, param)
+            problems = check_against_reference(comp, ref_local, param)
             if problems:
                 print("  %s STRUCTURE MISMATCH:" % param)
                 for p in problems:
@@ -154,14 +163,11 @@ def main(a):
                 raise SystemExit("ABORT: refusing to publish a bundle that does not "
                                  "match the reference structure")
 
-        key = "%s/forecast/%s/%d/%s/%s_%s.nc" % (
-            ROOT, param, run_date.year, run_date.strftime("%Y%m"), param, a.date)
         if a.dry_run:
-            print("  %-4s %d steps %s -> %s  DRY RUN, would upload to %s"
+            print("  %-4s %d steps %s -> %s  structure OK, DRY RUN, would upload to %s"
                   % (param, n, t.min().date(), t.max().date(), key))
             continue
 
-        comp = s3mod.compress_nc(out)
         ok = s3mod.upload_file(comp, BUCKET, key, cred.access_key, cred.secret_key)
         print("  %-4s %d steps %s -> %s  %s  %s"
               % (param, n, t.min().date(), t.max().date(),
