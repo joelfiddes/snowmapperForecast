@@ -86,13 +86,22 @@ def build(param, run_date, days, paths, out_path):
 
 
 def check_against_reference(candidate, reference, param):
-    """Structural comparison with a known-good bundle. Values are not compared."""
+    """Structural comparison with a known-good bundle of the SAME parameter.
+
+    The reference must be the same parameter: `units` and `long_name` differ
+    legitimately between swe (mm / snow_water_equivalent), hs (m / snow_height)
+    and rof (mm / snow_runoff), so cross-parameter comparison reports mismatches
+    that are not defects -- and KeyErrors on the variable name.
+    """
     c = xr.open_dataset(candidate, decode_cf=False)
     r = xr.open_dataset(reference, decode_cf=False)
     var = param.lower()
     problems = []
     if var not in c:
         problems.append("variable %r absent (has %s)" % (var, list(c.data_vars)))
+    elif var not in r:
+        problems.append("reference has no %r (has %s) -- wrong parameter?"
+                        % (var, list(r.data_vars)))
     else:
         if c[var].dims != r[var].dims:
             problems.append("dims %s != reference %s" % (c[var].dims, r[var].dims))
@@ -126,14 +135,16 @@ def main(a):
     cred = boto3.Session().get_credentials().get_frozen_credentials()
     tmpdir = tempfile.mkdtemp(prefix="bundle-")
 
-    # a known-good 10-step bundle to gate the structure against
-    ref_local = None
-    if a.reference:
-        ref_local = os.path.join(tmpdir, "reference.nc")
-        s3.download_file(BUCKET, a.reference, ref_local)
-        print("  reference: %s" % a.reference)
-
     for param in PARAMS:
+        # a known-good 10-step bundle OF THE SAME PARAMETER to gate against
+        ref_local = None
+        if a.reference_date:
+            rd = pd.Timestamp(a.reference_date)
+            rkey = "%s/forecast/%s/%d/%s/%s_%s.nc" % (
+                ROOT, param, rd.year, rd.strftime("%Y%m"), param, a.reference_date)
+            ref_local = os.path.join(tmpdir, "ref_%s.nc" % param)
+            s3.download_file(BUCKET, rkey, ref_local)
+
         paths = gather(param, days, a.source, s3, tmpdir)
         out = os.path.join(tmpdir, "%s_%s.nc" % (param, a.date))
         build(param, run_date, days, paths, out)
@@ -183,7 +194,8 @@ if __name__ == "__main__":
     ap.add_argument("--date", required=True, help="bundle run date YYYYMMDD")
     ap.add_argument("--days", type=int, default=10)
     ap.add_argument("--source", default="local", choices=["local", "s3"])
-    ap.add_argument("--reference", default=None,
-                    help="S3 key of a known-good bundle to gate structure against")
+    ap.add_argument("--reference-date", default=None,
+                    help="run date YYYYMMDD of a known-good bundle to gate structure "
+                         "against; the same parameter is used for each comparison")
     ap.add_argument("--dry-run", action="store_true")
     main(ap.parse_args())
