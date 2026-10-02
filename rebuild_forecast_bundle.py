@@ -134,6 +134,14 @@ def main(a):
     s3 = boto3.client("s3")
     cred = boto3.Session().get_credentials().get_frozen_credentials()
     tmpdir = tempfile.mkdtemp(prefix="bundle-")
+    # Separate in/out dirs. days[0] == run_date, so with --source s3 the first
+    # downloaded daily grid and the bundle share the name {PARAM}_{date}.nc --
+    # a single directory means writing the output over an input that netCDF4
+    # still has open (PermissionError, or silent corruption).
+    indir = os.path.join(tmpdir, "in")
+    outdir = os.path.join(tmpdir, "out")
+    os.makedirs(indir)
+    os.makedirs(outdir)
 
     for param in PARAMS:
         # a known-good 10-step bundle OF THE SAME PARAMETER to gate against
@@ -142,11 +150,11 @@ def main(a):
             rd = pd.Timestamp(a.reference_date)
             rkey = "%s/forecast/%s/%d/%s/%s_%s.nc" % (
                 ROOT, param, rd.year, rd.strftime("%Y%m"), param, a.reference_date)
-            ref_local = os.path.join(tmpdir, "ref_%s.nc" % param)
+            ref_local = os.path.join(outdir, "ref_%s.nc" % param)
             s3.download_file(BUCKET, rkey, ref_local)
 
-        paths = gather(param, days, a.source, s3, tmpdir)
-        out = os.path.join(tmpdir, "%s_%s.nc" % (param, a.date))
+        paths = gather(param, days, a.source, s3, indir)
+        out = os.path.join(outdir, "%s_%s.nc" % (param, a.date))
         build(param, run_date, days, paths, out)
 
         ds = xr.open_dataset(out)
